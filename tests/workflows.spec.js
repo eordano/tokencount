@@ -102,9 +102,6 @@ test.describe("Edit and compare token diff", () => {
     await expect(heroNumber).toBeVisible();
     // Hero shows +N, -N, ~+N, ~-N, or = (when counts are equal)
     expect(await heroNumber.textContent()).toMatch(/^[+\-=~]/);
-
-    // Diff card is no longer shown in compare mode
-    await expect(page.locator("#diff-card")).toBeHidden();
     await snap(page, "02-compare-mode-complete", testInfo);
   });
 

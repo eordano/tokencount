@@ -90,8 +90,6 @@ const tokenHighlightB = document.getElementById("token-highlight-b");
 const modelSelectNativeA = document.getElementById("model-select-native-a");
 const modelSelectNativeB = document.getElementById("model-select-native-b");
 
-// Diff card (hidden, kept for potential future use)
-const diffCard = document.getElementById("diff-card");
 
 // ===== Helpers =====
 function escapeHtml(str) {
@@ -179,8 +177,6 @@ function updateLayout() {
         textB = textA;
         textareaB.value = textA;
       }
-      // Hide diff card in model compare mode
-      diffCard.style.display = "none";
       // Show both model selectors
       document.querySelector("#panel-a .panel-model-selector").style.display = "";
       document.querySelector("#panel-b .panel-model-selector").style.display = "";
@@ -202,7 +198,6 @@ function updateLayout() {
   } else {
     mainContent.classList.remove("compare-mode");
     panelB.style.display = "none";
-    diffCard.style.display = "none";
     mobileTabsContainer.style.display = "none";
     panelTitleA.textContent = "";
     textareaB.readOnly = false;
@@ -486,12 +481,6 @@ function renderDiffSummary() {
   }
 }
 
-// ===== Diff card =====
-function renderDiffCard() {
-  // Diff card is no longer used - always hide it
-  diffCard.style.display = "none";
-}
-
 // ===== Token highlight =====
 function renderTokenHighlight(container, text, panelModel) {
   if (!text || !text.trim()) {
@@ -546,7 +535,6 @@ function render() {
   updateLayout();
   renderModelDisplay();
   renderDiffSummary();
-  renderDiffCard();
   updateTokenHighlights();
 }
 

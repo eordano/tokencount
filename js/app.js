@@ -1,4 +1,3 @@
-import { computeDiff } from "./diff.js";
 import {
   MODEL_PROFILES,
   countTokens,
@@ -91,13 +90,8 @@ const tokenHighlightB = document.getElementById("token-highlight-b");
 const modelSelectNativeA = document.getElementById("model-select-native-a");
 const modelSelectNativeB = document.getElementById("model-select-native-b");
 
-// Diff card
+// Diff card (hidden, kept for potential future use)
 const diffCard = document.getElementById("diff-card");
-const diffCardLabel = document.getElementById("diff-card-label");
-const diffStatsAdded = document.getElementById("diff-stats-added");
-const diffStatsRemoved = document.getElementById("diff-stats-removed");
-const diffStatsUnchanged = document.getElementById("diff-stats-unchanged");
-const diffBody = document.getElementById("diff-body");
 
 // ===== Helpers =====
 function escapeHtml(str) {

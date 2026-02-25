@@ -413,16 +413,6 @@ body {
   color: var(--primary-foreground);
 }
 
-.compare-btn-secondary {
-  background: transparent;
-  color: var(--primary);
-}
-
-.compare-btn-secondary:hover {
-  background: var(--primary);
-  color: var(--primary-foreground);
-}
-
 /* ===== Mobile Tabs ===== */
 .mobile-tabs {
   display: none;

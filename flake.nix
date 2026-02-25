@@ -89,7 +89,16 @@
         );
     in
     {
+      apps = forEachSystem ({ pkgs }: {
+        default = {
+          type = "app";
+          program = "${self.packages.${pkgs.system}.default}/bin/tokencount";
+        };
+      });
+
       packages = forEachSystem ({ pkgs }: {
+        default = self.packages.${pkgs.system}.build-cli;
+
         test-e2e = pkgs.writeShellApplication {
           name = "test-e2e";
           runtimeInputs = [ pkgs.nodejs pkgs.python3 pkgs.chromium ];

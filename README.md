@@ -42,6 +42,9 @@ diffs with token deltas. **Token overlay** visualizes boundaries on your text.
 ## CLI
 
 ```bash
+nix run github:eordano/tokencount <FILE>
+
+# Or after cloning this repo
 npm run build:cli
 
 echo "Hello world" | dist/tokencount.mjs   # default: Claude

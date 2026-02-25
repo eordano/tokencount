@@ -31,6 +31,7 @@ body {
   background: var(--background);
   color: var(--foreground);
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -39,6 +40,7 @@ body {
 /* App Shell */
 .app-shell {
   height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   overflow: hidden;

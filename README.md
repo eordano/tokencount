@@ -179,8 +179,7 @@ python3 -m http.server 8000
 
 ### Tests
 
-[Playwright](https://playwright.dev/) E2E tests cover desktop (1280x720) and
-mobile (375x812) viewports:
+[Screenshot viewer](https://tokencount.eordano.com/tests/screenshots/viewer.html) — auto-captured from CI (desktop + mobile).
 
 ```bash
 npm install

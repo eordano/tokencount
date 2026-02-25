@@ -1,0 +1,146 @@
+name: Test & Deploy
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: E2E tests (dev server)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+
+      - run: npm ci
+
+      - run: npx playwright install --with-deps chromium
+
+      - name: Install CJK fonts
+        run: sudo apt-get install -y fonts-noto-cjk
+
+      - name: Get Chromium path
+        id: browser-path
+        run: echo "path=$(node -e "const {chromium}=require('@playwright/test');console.log(chromium.executablePath())")" >> "$GITHUB_OUTPUT"
+
+      - name: Run E2E tests
+        run: npx playwright test
+        env:
+          BROWSER_PATH: ${{ steps.browser-path.outputs.path }}
+
+      - name: Upload screenshots
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: screenshots
+          path: tests/screenshots/
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: test-results
+          path: test-results/
+
+  test-cli:
+    name: CLI tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+
+      - run: PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm ci
+
+      - name: Build CLI
+        run: node scripts/build-cli.mjs
+
+      - name: Smoke test
+        run: echo "Hello, world!" | ./dist/tokencount.mjs
+
+      - name: Run CLI tests
+        run: npm run test:cli
+
+  test-bundle:
+    name: E2E tests (offline bundle)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+
+      - run: npm ci
+
+      - run: npx playwright install --with-deps chromium
+
+      - name: Install CJK fonts
+        run: sudo apt-get install -y fonts-noto-cjk
+
+      - name: Build offline bundle
+        run: node scripts/build-offline.mjs
+
+      - name: Get Chromium path
+        id: browser-path
+        run: echo "path=$(node -e "const {chromium}=require('@playwright/test');console.log(chromium.executablePath())")" >> "$GITHUB_OUTPUT"
+
+      - name: Run E2E tests against bundle
+        run: npx playwright test --config playwright.bundle.config.js
+        env:
+          BROWSER_PATH: ${{ steps.browser-path.outputs.path }}
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: bundle-test-results
+          path: test-results/
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: [test, test-cli, test-bundle]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies (skip browsers)
+        run: PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm ci
+
+      - name: Build offline bundle
+        run: node scripts/build-offline.mjs
+
+      - name: Download test screenshots
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: screenshots
+          path: tests/screenshots/
+
+      - name: Generate screenshot viewer
+        run: node scripts/build-screenshot-viewer.mjs
+
+      - name: Deploy to GitHub Pages
+        uses: JamesIves/github-pages-deploy-action@d92aa235d04922e8f08b40ce78cc5442fcfbfa2f # v4
+        with:
+          branch: gh-pages
+          folder: .
+          clean-exclude: pr-preview

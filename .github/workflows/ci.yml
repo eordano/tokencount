@@ -24,7 +24,7 @@ jobs:
         with:
           node-version: "20"
 
-      - run: npm ci
+      - run: npm ci --ignore-scripts
 
       - run: npx playwright install --with-deps chromium
 
@@ -64,7 +64,7 @@ jobs:
         with:
           node-version: "20"
 
-      - run: PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm ci
+      - run: npm ci --ignore-scripts
 
       - name: Build CLI
         run: node scripts/build-cli.mjs
@@ -85,7 +85,7 @@ jobs:
         with:
           node-version: "20"
 
-      - run: npm ci
+      - run: npm ci --ignore-scripts
 
       - run: npx playwright install --with-deps chromium
 
@@ -124,7 +124,7 @@ jobs:
           node-version: "20"
 
       - name: Install dependencies (skip browsers)
-        run: PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm ci
+        run: npm ci --ignore-scripts
 
       - name: Build offline bundle
         run: node scripts/build-offline.mjs

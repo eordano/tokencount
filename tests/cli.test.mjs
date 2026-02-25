@@ -97,13 +97,48 @@ test("single file shows count", () => {
   assert(out.includes("README.md"), "should show filename");
 });
 
-test("directory shows per-file counts and total", () => {
+test("directory without -r shows error", () => {
   const jsDir = path.join(ROOT, "js");
-  const out = run(`"${jsDir}"`);
+  const out = run(`"${jsDir}"`, { expectExit: 1 });
+  assert(out.includes("Is a directory"), "should say Is a directory");
+});
+
+test("directory with -r shows per-file counts and total", () => {
+  const jsDir = path.join(ROOT, "js");
+  const out = run(`-r "${jsDir}"`);
   const lines = out.trim().split("\n");
   assert(lines.length > 2, `expected multiple lines, got ${lines.length}`);
   const lastLine = lines[lines.length - 1];
   assert(lastLine.includes("total"), "last line should be total");
+});
+
+test("-r respects .gitignore (skips node_modules)", () => {
+  const out = run(`-r "${ROOT}"`);
+  assert(!out.includes("node_modules"), "should not include node_modules files");
+});
+
+test("-r --no-gitignore includes gitignored files", () => {
+  const out = run(`-r --no-gitignore "${path.join(ROOT, "dist")}"`);
+  assert(out.includes("tokencount.mjs"), "should include dist/tokencount.mjs");
+});
+
+test("--ignore with glob skips matching files", () => {
+  const out = run(`-r --ignore "*.json" "${path.join(ROOT, "js")}"`);
+  assert(!out.includes(".json"), "should not include .json files");
+  assert(out.includes("app.js"), "should still include .js files");
+});
+
+test("--ignore with directory name skips that subtree", () => {
+  const out = run(`-r --ignore data "${ROOT}"`);
+  assert(!out.includes("claude-vocab"), "should not include data/ files");
+  assert(out.includes("app.js"), "should still include js/ files");
+});
+
+test("--ignore can be repeated", () => {
+  const out = run(`-r --ignore "*.css" --ignore "*.json" "${ROOT}"`);
+  assert(!out.includes(".css"), "should not include .css files");
+  assert(!out.includes(".json"), "should not include .json files");
+  assert(out.includes("app.js"), "should still include .js files");
 });
 
 test("multiple files show total", () => {

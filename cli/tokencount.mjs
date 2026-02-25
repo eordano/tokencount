@@ -3,6 +3,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { execSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { loadModel, countTokens, MODEL_NAMES } from "./lib/tokenizer.mjs";
 
@@ -18,13 +19,16 @@ Count tokens in files or stdin using LLM tokenizers.
 Options:
   -m, --model <name>   Tokenizer model (default: claude)
   -a, --all            Show counts for all models
+  -r, --recursive      Recurse into directories
+  --ignore <pattern>   Skip files/dirs matching pattern (repeatable)
+  --no-gitignore       Don't skip .gitignore'd files when recursing
   -s, --share          Print a shareable URL instead of counts
   -h, --help           Show this help
 
 Models: ${MODEL_NAMES.join(", ")}
 
 When no paths are given, reads from stdin.
-Directories are recursed; binary files are skipped.
+Directories require -r; binary files are skipped.
 
 Share mode (-s) takes one or two files (or stdin) and prints a URL
 that opens the web app with the text pre-filled. Use two files to
@@ -33,12 +37,23 @@ get a side-by-side diff. Override the base URL with TOKEN_COUNT_URL.`;
 // ── Arg parsing ──────────────────────────────────────────────────────────
 
 function parseArgs(argv) {
-  const args = { model: "claude", all: false, share: false, help: false, paths: [] };
+  const args = { model: "claude", all: false, recursive: false, gitignore: true, ignore: [], share: false, help: false, paths: [] };
   let i = 0;
   while (i < argv.length) {
     const arg = argv[i];
     if (arg === "-h" || arg === "--help") {
       args.help = true;
+    } else if (arg === "-r" || arg === "--recursive") {
+      args.recursive = true;
+    } else if (arg === "--ignore") {
+      i++;
+      if (i >= argv.length) {
+        process.stderr.write("Error: --ignore requires a value\n");
+        process.exit(1);
+      }
+      args.ignore.push(argv[i]);
+    } else if (arg === "--no-gitignore") {
+      args.gitignore = false;
     } else if (arg === "-s" || arg === "--share") {
       args.share = true;
     } else if (arg === "-a" || arg === "--all") {
@@ -99,7 +114,59 @@ function isBinary(filePath) {
   return false;
 }
 
-function expandPaths(paths) {
+function isInGitRepo(dir) {
+  try {
+    execSync("git rev-parse --git-dir", { cwd: dir, stdio: "ignore" });
+    return true;
+  } catch { return false; }
+}
+
+function gitListFiles(dir) {
+  const out = execSync("git ls-files -z", { cwd: dir, encoding: "utf8", maxBuffer: 50 * 1024 * 1024 });
+  return out.split("\0").filter(Boolean).map((f) => path.join(dir, f));
+}
+
+/**
+ * Test whether a file path matches an ignore pattern.
+ * Patterns without / match against the basename (like .gitignore).
+ * Patterns with / match against the full relative path.
+ * Supports * (any chars except /) and ** (any chars including /).
+ */
+function matchesIgnore(filePath, baseDir, patterns) {
+  if (patterns.length === 0) return false;
+  const rel = path.relative(baseDir, filePath);
+  const basename = path.basename(filePath);
+  for (const pat of patterns) {
+    const target = pat.includes("/") ? rel : basename;
+    const regex = new RegExp(
+      "^" + pat.replace(/[.+^${}()|[\]\\]/g, "\\$&")
+              .replace(/\*\*/g, "\0")
+              .replace(/\*/g, "[^/]*")
+              .replace(/\0/g, ".*")
+      + "$"
+    );
+    if (regex.test(target)) return true;
+    // Pattern without a glob also matches as a directory prefix
+    if (!pat.includes("*") && (rel === pat || rel.startsWith(pat + "/"))) return true;
+  }
+  return false;
+}
+
+function expandDir(dir, useGitignore) {
+  if (useGitignore && isInGitRepo(dir)) {
+    return gitListFiles(dir).filter((f) => !isBinary(f));
+  }
+  const entries = fs.readdirSync(dir, { recursive: true });
+  const files = [];
+  for (const entry of entries) {
+    const full = path.join(dir, entry);
+    const s = fs.statSync(full, { throwIfNoEntry: false });
+    if (s && s.isFile() && !isBinary(full)) files.push(full);
+  }
+  return files;
+}
+
+function expandPaths(paths, recursive, useGitignore, ignorePatterns) {
   const files = [];
   for (const p of paths) {
     const stat = fs.statSync(p, { throwIfNoEntry: false });
@@ -108,13 +175,12 @@ function expandPaths(paths) {
       process.exit(1);
     }
     if (stat.isDirectory()) {
-      const entries = fs.readdirSync(p, { recursive: true });
-      for (const entry of entries) {
-        const full = path.join(p, entry);
-        const s = fs.statSync(full, { throwIfNoEntry: false });
-        if (s && s.isFile() && !isBinary(full)) {
-          files.push(full);
-        }
+      if (!recursive) {
+        process.stderr.write(`Error: ${p}: Is a directory (use -r to recurse)\n`);
+        process.exit(1);
+      }
+      for (const f of expandDir(p, useGitignore)) {
+        if (!matchesIgnore(f, p, ignorePatterns)) files.push(f);
       }
     } else if (stat.isFile()) {
       files.push(p);
@@ -177,7 +243,7 @@ async function main() {
     const text = Buffer.concat(chunks).toString("utf8");
     inputs = [{ name: null, text }];
   } else {
-    const files = expandPaths(args.paths);
+    const files = expandPaths(args.paths, args.recursive, args.gitignore, args.ignore);
     inputs = files.map((f) => ({ name: f, text: fs.readFileSync(f, "utf8") }));
   }
 

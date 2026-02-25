@@ -25,20 +25,25 @@ class ClaudeTokenizer {
     }
   }
 
+  // Greedy longest-match: returns byte length of best token at pos
+  _matchLen(bytes, pos) {
+    let node = this.root;
+    let best = 0;
+    for (let i = pos; i < bytes.length; i++) {
+      node = node.children.get(bytes[i]);
+      if (!node) break;
+      if (node.isTerminal) best = i - pos + 1;
+    }
+    return best || 1;
+  }
+
   countTokens(text) {
     if (!text || text.length === 0) return 0;
     const bytes = new TextEncoder().encode(text);
     let count = 0;
     let pos = 0;
     while (pos < bytes.length) {
-      let node = this.root;
-      let bestLen = 0;
-      for (let i = pos; i < bytes.length; i++) {
-        node = node.children.get(bytes[i]);
-        if (!node) break;
-        if (node.isTerminal) bestLen = i - pos + 1;
-      }
-      pos += bestLen || 1;
+      pos += this._matchLen(bytes, pos);
       count++;
     }
     return count;
@@ -68,14 +73,7 @@ class ClaudeTokenizer {
 
     let pos = 0;
     while (pos < bytes.length) {
-      let node = this.root;
-      let bestLen = 0;
-      for (let i = pos; i < bytes.length; i++) {
-        node = node.children.get(bytes[i]);
-        if (!node) break;
-        if (node.isTerminal) bestLen = i - pos + 1;
-      }
-      const len = bestLen || 1;
+      const len = this._matchLen(bytes, pos);
       const startChar = byteToChar[pos];
       const endChar = byteToChar[pos + len];
       if (endChar > startChar) {
@@ -88,37 +86,29 @@ class ClaudeTokenizer {
 }
 
 let instance = null;
-let loading = false;
-let loadError = null;
-const waiters = [];
+let loadPromise = null;
 
 export async function loadClaudeTokenizer(vocabUrl) {
-  if (instance) return instance;
-  if (loadError) throw loadError;
-
-  if (loading) {
-    return new Promise((resolve, reject) => {
-      waiters.push({ resolve, reject });
-    });
+  if (!loadPromise) {
+    loadPromise = fetch(vocabUrl)
+      .then((res) => {
+        if (!res.ok) throw new Error(`Failed to fetch vocab: ${res.status}`);
+        return res.json();
+      })
+      .then((vocab) => {
+        instance = new ClaudeTokenizer(vocab);
+        return instance;
+      })
+      .catch((err) => {
+        loadPromise = null; // allow retry on failure
+        throw err;
+      });
   }
-
-  loading = true;
-  try {
-    const res = await fetch(vocabUrl);
-    if (!res.ok) throw new Error(`Failed to fetch vocab: ${res.status}`);
-    const vocab = await res.json();
-    instance = new ClaudeTokenizer(vocab);
-    for (const w of waiters) w.resolve(instance);
-    return instance;
-  } catch (err) {
-    loadError = err;
-    for (const w of waiters) w.reject(err);
-    throw err;
-  } finally {
-    loading = false;
-  }
+  return loadPromise;
 }
 
 export function getClaudeTokenizer() {
   return instance;
 }
+
+export { ClaudeTokenizer };

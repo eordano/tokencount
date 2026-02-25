@@ -40,14 +40,7 @@ const textareaB = document.getElementById("textarea-b");
 // Panel titles
 const panelTitleA = document.getElementById("panel-title-a");
 
-// Single-panel model selector (in panel-a footer)
-const panelModelSingle = document.getElementById("panel-model-single");
-const modelSelectorSingle = document.getElementById("model-selector-single");
-const modelDotSingle = document.getElementById("model-dot-single");
-const modelNameSingle = document.getElementById("model-name-single");
-const modelDropdownSingle = document.getElementById("model-dropdown-single");
-
-// Compare-mode model selector (in diff summary)
+// Model selector (in diff summary)
 const modelSelectorA = document.getElementById("model-selector-a");
 const modelDotA = document.getElementById("model-dot-a");
 const modelNameA = document.getElementById("model-name-a");
@@ -85,8 +78,7 @@ const tokenViewBtnB = document.getElementById("token-view-btn-b");
 const tokenHighlightA = document.getElementById("token-highlight-a");
 const tokenHighlightB = document.getElementById("token-highlight-b");
 
-// Native model selects (mobile)
-const modelSelectNativeSingle = document.getElementById("model-select-native-single");
+// Native model select (mobile)
 const modelSelectNativeCompare = document.getElementById("model-select-native-compare");
 
 // Diff card
@@ -98,6 +90,10 @@ const diffStatsUnchanged = document.getElementById("diff-stats-unchanged");
 const diffBody = document.getElementById("diff-body");
 
 // ===== Helpers =====
+function escapeHtml(str) {
+  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 function formatNumber(n) {
   return n.toLocaleString();
 }
@@ -119,9 +115,15 @@ function getWordCount(text) {
   return text.split(/\s+/).filter((w) => w.length > 0).length;
 }
 
+function formatDelta(d) {
+  const sign = d > 0 ? "+" : "";
+  const cls = d > 0 ? "positive" : d < 0 ? "negative" : "";
+  const val = d === 0 ? "=" : `${sign}${formatNumber(d)}`;
+  return { cls, val };
+}
+
 // ===== Debounce =====
-let highlightTimerA = null;
-let highlightTimerB = null;
+const highlightTimers = { a: null, b: null };
 const HIGHLIGHT_DEBOUNCE_MS = 300;
 
 function debouncedRenderHighlight(container, text, timerKey) {
@@ -129,19 +131,12 @@ function debouncedRenderHighlight(container, text, timerKey) {
   // While waiting for highlight to render, show plain text
   textarea.classList.remove("token-overlay-active");
 
-  const cb = () => {
+  clearTimeout(highlightTimers[timerKey]);
+  highlightTimers[timerKey] = setTimeout(() => {
     renderTokenHighlight(container, text);
     // Highlight is now up-to-date — switch to transparent overlay
     textarea.classList.add("token-overlay-active");
-  };
-
-  if (timerKey === "a") {
-    clearTimeout(highlightTimerA);
-    highlightTimerA = setTimeout(cb, HIGHLIGHT_DEBOUNCE_MS);
-  } else {
-    clearTimeout(highlightTimerB);
-    highlightTimerB = setTimeout(cb, HIGHLIGHT_DEBOUNCE_MS);
-  }
+  }, HIGHLIGHT_DEBOUNCE_MS);
 }
 
 // ===== Model loading =====
@@ -162,7 +157,6 @@ function updateLayout() {
     compareToggle.style.display = "none";
     diffSummary.style.display = "";
     shareBtn.style.display = "";
-    panelModelSingle.style.display = "none";
     panelTitleA.textContent = "Original";
     updateMobileTabs();
   } else {
@@ -176,7 +170,6 @@ function updateLayout() {
     // Show diff summary strip (model chooser + count + share) when text exists
     diffSummary.style.display = hasText ? "" : "none";
     shareBtn.style.display = hasText ? "" : "none";
-    panelModelSingle.style.display = "none";
     compareToggle.style.display = hasText ? "" : "none";
   }
 }
@@ -200,8 +193,7 @@ function renderModelDisplay() {
   const profile = getProfile(model);
   if (!profile) return;
 
-  // Sync native selects
-  modelSelectNativeSingle.value = model;
+  // Sync native select
   modelSelectNativeCompare.value = model;
 
   // Always update diff summary model selector (visible in both modes now)
@@ -227,9 +219,6 @@ function renderModelDisplay() {
       allModelsA.style.display = "none";
     }
   } else {
-    // Keep hidden single-panel selector in sync too
-    modelDotSingle.style.background = profile.color;
-    modelNameSingle.textContent = profile.displayName;
     allModelsA.style.display = "none";
   }
 
@@ -251,7 +240,7 @@ function renderModelDisplay() {
 let dropdownOpen = false;
 let activeDropdownEl = null;
 
-function openDropdown(dropdownEl) {
+function buildDropdownHtml() {
   const combinedText = compareMode ? textA + " " + textB : textA;
   const allCounts = countAllTokenizers(combinedText);
 
@@ -267,12 +256,8 @@ function openDropdown(dropdownEl) {
 
     let deltaHtml = "";
     if (compareMode && textA && textB) {
-      const tokA = countTokens(textA, est.name);
-      const tokB = countTokens(textB, est.name);
-      const d = tokB - tokA;
-      const sign = d > 0 ? "+" : "";
-      const cls = d > 0 ? "positive" : d < 0 ? "negative" : "";
-      const val = d === 0 ? "=" : `${sign}${formatNumber(d)}`;
+      const d = countTokens(textB, est.name) - countTokens(textA, est.name);
+      const { cls, val } = formatDelta(d);
       deltaHtml = `<span class="delta ${cls}">${val}</span>`;
     }
 
@@ -289,8 +274,11 @@ function openDropdown(dropdownEl) {
   html += `<button class="dropdown-toggle" data-action="toggle-all">
     ${showAll ? "Show one model" : "Show all models"}
   </button>`;
+  return html;
+}
 
-  dropdownEl.innerHTML = html;
+function openDropdown(dropdownEl) {
+  dropdownEl.innerHTML = buildDropdownHtml();
   dropdownEl.style.display = "block";
   activeDropdownEl = dropdownEl;
   dropdownOpen = true;
@@ -393,14 +381,11 @@ function renderDiffSummary() {
 
     let html = "";
     for (const est of allCounts) {
-      const d = est.tokB - est.tokA;
-      const s = d > 0 ? "+" : d === 0 ? "" : "";
-      const c = d > 0 ? "positive" : d < 0 ? "negative" : "";
-      const val = d === 0 ? "=" : `${s}${formatNumber(d)}`;
+      const { cls, val } = formatDelta(est.tokB - est.tokA);
       html += `<span class="delta-item">
         <span class="dot" style="background:${est.color}"></span>
         <span>${est.displayName}</span>
-        <span class="delta-val ${c}">${val}</span>
+        <span class="delta-val ${cls}">${val}</span>
       </span>`;
     }
     diffSummaryAll.innerHTML = html;
@@ -412,17 +397,7 @@ function renderDiffSummary() {
 
 // ===== Diff card =====
 function renderDiffCard() {
-  if (!compareMode) {
-    diffCard.style.display = "none";
-    return;
-  }
-
-  if (textA === textB) {
-    diffCard.style.display = "none";
-    return;
-  }
-
-  if (!textA && !textB) {
+  if (!compareMode || textA === textB || (!textA && !textB)) {
     diffCard.style.display = "none";
     return;
   }
@@ -442,7 +417,7 @@ function renderDiffCard() {
 
   const profile = getProfile(model);
   if (profile) {
-    diffCardLabel.textContent = `${profile.displayName} Diff`;
+    diffCardLabel.textContent = `Tokens diff`;
     const prefix = isReady(model) ? "" : "~";
     const addedTok = countTokens(addedText, model);
     const removedTok = countTokens(removedText, model);
@@ -460,10 +435,7 @@ function renderDiffCard() {
   // Render diff body
   let html = "";
   for (const seg of diff) {
-    const escaped = seg.text
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
+    const escaped = escapeHtml(seg.text);
     if (seg.type === "added") {
       html += `<span class="diff-span-added">${escaped}</span>`;
     } else if (seg.type === "removed") {
@@ -499,11 +471,7 @@ function renderTokenHighlight(container, text) {
       if (part === "\n" || part === "\r" || part === "\r\n") {
         html += "\n";
       } else if (part) {
-        const escaped = part
-          .replace(/&/g, "&amp;")
-          .replace(/</g, "&lt;")
-          .replace(/>/g, "&gt;");
-        html += `<span class="${cls}" title="Token ${i + 1}">${escaped}</span>`;
+        html += `<span class="${cls}" title="Token ${i + 1}">${escapeHtml(part)}</span>`;
       }
     }
   }
@@ -511,31 +479,21 @@ function renderTokenHighlight(container, text) {
 }
 
 function updateTokenHighlights() {
-  // Panel A
-  if (highlightA && textA.trim()) {
-    tokenHighlightA.style.display = "block";
-    debouncedRenderHighlight(tokenHighlightA, textA, "a");
-  } else {
-    textareaA.classList.remove("token-overlay-active");
-    tokenHighlightA.style.display = "none";
+  const panels = [
+    { highlight: highlightA, text: textA, key: "a", container: tokenHighlightA, textarea: textareaA, btn: tokenViewBtnA },
+    { highlight: highlightB, text: textB, key: "b", container: tokenHighlightB, textarea: textareaB, btn: tokenViewBtnB },
+  ];
+  for (const p of panels) {
+    if (p.highlight && p.text.trim()) {
+      p.container.style.display = "block";
+      debouncedRenderHighlight(p.container, p.text, p.key);
+    } else {
+      p.textarea.classList.remove("token-overlay-active");
+      p.container.style.display = "none";
+    }
+    p.btn.classList.toggle("active", p.highlight);
+    p.btn.disabled = !p.text.trim();
   }
-
-  // Panel B
-  if (highlightB && textB.trim()) {
-    tokenHighlightB.style.display = "block";
-    debouncedRenderHighlight(tokenHighlightB, textB, "b");
-  } else {
-    textareaB.classList.remove("token-overlay-active");
-    tokenHighlightB.style.display = "none";
-  }
-
-  // Toggle button active state
-  tokenViewBtnA.classList.toggle("active", highlightA);
-  tokenViewBtnB.classList.toggle("active", highlightB);
-
-  // Disable tokenize buttons when text is empty
-  tokenViewBtnA.disabled = !textA.trim();
-  tokenViewBtnB.disabled = !textB.trim();
 }
 
 // ===== Main render =====
@@ -599,15 +557,6 @@ modelSelectorA.addEventListener("click", (e) => {
   }
 });
 
-modelSelectorSingle.addEventListener("click", (e) => {
-  e.stopPropagation();
-  if (dropdownOpen) {
-    closeDropdown();
-  } else {
-    openDropdown(modelDropdownSingle);
-  }
-});
-
 // Close dropdown on outside click
 document.addEventListener("click", () => {
   if (dropdownOpen) closeDropdown();
@@ -654,32 +603,25 @@ textareaB.addEventListener("scroll", () => {
   tokenHighlightB.scrollLeft = textareaB.scrollLeft;
 });
 
-// Native model selects (mobile)
-function populateNativeSelects() {
-  for (const sel of [modelSelectNativeSingle, modelSelectNativeCompare]) {
-    sel.innerHTML = "";
-    for (const p of MODEL_PROFILES) {
-      const opt = document.createElement("option");
-      opt.value = p.name;
-      opt.textContent = p.displayName;
-      sel.appendChild(opt);
-    }
-    sel.value = model;
+// Native model select (mobile)
+function populateNativeSelect() {
+  modelSelectNativeCompare.innerHTML = "";
+  for (const p of MODEL_PROFILES) {
+    const opt = document.createElement("option");
+    opt.value = p.name;
+    opt.textContent = p.displayName;
+    modelSelectNativeCompare.appendChild(opt);
   }
+  modelSelectNativeCompare.value = model;
 }
-populateNativeSelects();
+populateNativeSelect();
 
-function onNativeSelectChange(e) {
+modelSelectNativeCompare.addEventListener("change", (e) => {
   model = e.target.value;
   ensureModelLoaded(model);
   savePrefs();
-  // Sync both selects
-  modelSelectNativeSingle.value = model;
-  modelSelectNativeCompare.value = model;
   render();
-}
-modelSelectNativeSingle.addEventListener("change", onNativeSelectChange);
-modelSelectNativeCompare.addEventListener("change", onNativeSelectChange);
+});
 
 // Share
 shareBtn.addEventListener("click", () => {

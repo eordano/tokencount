@@ -1,6 +1,6 @@
 # tokencount
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 [![GitHub Pages](https://img.shields.io/badge/demo-live-green)](https://tokencount.eordano.com)
 [![Deploy](https://github.com/eordano/tokencount/actions/workflows/deploy.yml/badge.svg)](https://github.com/eordano/tokencount/actions/workflows/deploy.yml)
 
@@ -169,4 +169,4 @@ to `main`. The workflow uploads the entire repository as a GitHub Pages artifact
 
 ## License
 
-[MIT](LICENSE)
+[AGPL-3.0](LICENSE)

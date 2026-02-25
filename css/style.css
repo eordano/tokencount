@@ -65,11 +65,6 @@ body {
   }
 }
 
-/* Compare mode: side-by-side panels on desktop */
-.main-content.compare-mode {
-  /* handled via grid below */
-}
-
 /* ===== Panel ===== */
 .panel {
   display: flex;
@@ -124,13 +119,6 @@ body {
   font-variant-numeric: tabular-nums;
   color: var(--muted-foreground);
   opacity: 0.7;
-}
-
-.panel-model-single {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  position: relative;
 }
 
 .model-selector {
@@ -710,12 +698,16 @@ body {
   font-style: italic;
 }
 
-.tok-0 { background: oklch(0.35 0.10 240); border-radius: 2px; padding: 1px 0; }
-.tok-1 { background: oklch(0.35 0.10 150); border-radius: 2px; padding: 1px 0; }
-.tok-2 { background: oklch(0.35 0.10 30);  border-radius: 2px; padding: 1px 0; }
-.tok-3 { background: oklch(0.35 0.10 300); border-radius: 2px; padding: 1px 0; }
-.tok-4 { background: oklch(0.35 0.10 180); border-radius: 2px; padding: 1px 0; }
-.tok-5 { background: oklch(0.35 0.10 60);  border-radius: 2px; padding: 1px 0; }
+.tok-0, .tok-1, .tok-2, .tok-3, .tok-4, .tok-5 {
+  border-radius: 2px;
+  padding: 1px 0;
+}
+.tok-0 { background: oklch(0.35 0.10 240); }
+.tok-1 { background: oklch(0.35 0.10 150); }
+.tok-2 { background: oklch(0.35 0.10 30);  }
+.tok-3 { background: oklch(0.35 0.10 300); }
+.tok-4 { background: oklch(0.35 0.10 180); }
+.tok-5 { background: oklch(0.35 0.10 60);  }
 
 /* ===== Native Model Select (mobile) ===== */
 .model-select-native {
@@ -741,8 +733,6 @@ body {
     background-position: right 6px center;
   }
 
-  .panel-model-single .model-selector,
-  .panel-model-single .model-dropdown,
   .diff-summary-model .model-selector,
   .diff-summary-model .model-dropdown {
     display: none !important;
@@ -795,22 +785,6 @@ body {
 .toast.show {
   opacity: 1;
   transform: translateY(0);
-}
-
-/* Loading indicator */
-.loading-indicator {
-  font-size: 12px;
-  color: var(--muted-foreground);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  animation: pulse 1.5s ease-in-out infinite;
-  white-space: nowrap;
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 0.5; }
-  50% { opacity: 1; }
 }
 
 /* ===== Responsive: Desktop (side-by-side in compare mode) ===== */

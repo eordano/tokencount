@@ -17,33 +17,30 @@ export const MODEL_PROFILES = [
   { name: "grok",     displayName: "Grok",     label: "Grok (1 and 2, 3 and 4 unknown)",              color: "#E63946", type: "hf", hfRepo: "Xenova/grok-1-tokenizer" },
 ];
 
-// State
-let gptEncode = null;
-let gptDecode = null;
-const hfTokenizers = {};
-const status = {};
-const loadPromises = {};
-let hfAutoTokenizer = null;
-let hfAutoTokenizerPromise = null;
-
-for (const p of MODEL_PROFILES) {
-  status[p.name] = "pending";
-}
+// State — all mutable tokenizer state lives here
+const state = {
+  status: Object.fromEntries(MODEL_PROFILES.map((p) => [p.name, "pending"])),
+  promises: {},       // name → load promise
+  gpt: null,          // { encode, decode } once loaded
+  hf: {},             // name → HF tokenizer instance
+  hfLib: null,        // AutoTokenizer class (shared)
+  hfLibPromise: null, // loading promise for the HF library
+};
 
 export function getStatus(name) {
-  return status[name] || "pending";
+  return state.status[name] || "pending";
 }
 
 export function isReady(name) {
-  return status[name] === "ready";
+  return state.status[name] === "ready";
 }
 
 // Count tokens using real tokenizer, or fallback to heuristic
 export function countTokens(text, name) {
   if (!text || text.trim().length === 0) return 0;
 
-  if (name === "openai" && gptEncode) {
-    return gptEncode(text).length;
+  if (name === "openai" && state.gpt) {
+    return state.gpt.encode(text).length;
   }
 
   if (name === "claude") {
@@ -52,11 +49,10 @@ export function countTokens(text, name) {
     return fallbackEstimate(text, name);
   }
 
-  const tokenizer = hfTokenizers[name];
+  const tokenizer = state.hf[name];
   if (tokenizer) {
     try {
-      const ids = tokenizer.encode(text);
-      return ids.length;
+      return tokenizer.encode(text).length;
     } catch {
       return fallbackEstimate(text, name);
     }
@@ -78,6 +74,18 @@ export function countAllTokenizers(text) {
   }));
 }
 
+// Progressively decode token IDs into an array of token strings
+function decodeProgressive(ids, decodeFn) {
+  const tokens = [];
+  let prev = 0;
+  for (let i = 0; i < ids.length; i++) {
+    const decoded = decodeFn(ids.slice(0, i + 1));
+    tokens.push(decoded.slice(prev));
+    prev = decoded.length;
+  }
+  return tokens;
+}
+
 // Encode text into an array of token strings for visualization
 export function encodeTokens(text, name) {
   if (!text || text.length === 0) return null;
@@ -87,30 +95,17 @@ export function encodeTokens(text, name) {
     return ct ? ct.encode(text) : null;
   }
 
-  if (name === "openai" && gptEncode && gptDecode) {
-    const ids = gptEncode(text);
-    const tokens = [];
-    let prev = 0;
-    for (let i = 0; i < ids.length; i++) {
-      const decoded = gptDecode(ids.slice(0, i + 1));
-      tokens.push(decoded.slice(prev));
-      prev = decoded.length;
-    }
-    return tokens;
+  if (name === "openai" && state.gpt) {
+    return decodeProgressive(state.gpt.encode(text), state.gpt.decode);
   }
 
-  const tokenizer = hfTokenizers[name];
+  const tokenizer = state.hf[name];
   if (tokenizer) {
     try {
       const ids = tokenizer.encode(text);
-      const tokens = [];
-      let prev = 0;
-      for (let i = 0; i < ids.length; i++) {
-        const decoded = tokenizer.decode(ids.slice(0, i + 1), { skip_special_tokens: true });
-        tokens.push(decoded.slice(prev));
-        prev = decoded.length;
-      }
-      return tokens.filter(t => t.length > 0);
+      return decodeProgressive(ids, (slice) =>
+        tokenizer.decode(slice, { skip_special_tokens: true })
+      ).filter(t => t.length > 0);
     } catch {
       return null;
     }
@@ -121,72 +116,71 @@ export function encodeTokens(text, name) {
 
 // Load HuggingFace transformers library (shared, loaded once)
 function loadHfLibrary() {
-  if (hfAutoTokenizer) return Promise.resolve(hfAutoTokenizer);
-  if (hfAutoTokenizerPromise) return hfAutoTokenizerPromise;
-  hfAutoTokenizerPromise = import("https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.4.1")
+  if (state.hfLib) return Promise.resolve(state.hfLib);
+  if (state.hfLibPromise) return state.hfLibPromise;
+  state.hfLibPromise = import("https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1")
     .then((mod) => {
-      hfAutoTokenizer = mod.AutoTokenizer;
-      return hfAutoTokenizer;
+      state.hfLib = mod.AutoTokenizer;
+      return state.hfLib;
     })
     .catch((err) => {
       console.error("Failed to load @huggingface/transformers:", err);
-      hfAutoTokenizerPromise = null;
+      state.hfLibPromise = null;
       throw err;
     });
-  return hfAutoTokenizerPromise;
+  return state.hfLibPromise;
 }
 
 // Lazy-load a single model by name. Returns a promise that resolves when ready.
 export function loadModel(name, onReady) {
-  if (status[name] === "ready" || status[name] === "error") {
+  if (state.status[name] === "ready" || state.status[name] === "error") {
     return Promise.resolve();
   }
-  if (loadPromises[name]) return loadPromises[name];
+  if (state.promises[name]) return state.promises[name];
 
   const profile = MODEL_PROFILES.find((p) => p.name === name);
   if (!profile) return Promise.resolve();
 
-  status[name] = "loading";
+  state.status[name] = "loading";
 
   let promise;
   if (profile.type === "gpt") {
-    promise = import("https://esm.sh/gpt-tokenizer@2.8.1/encoding/o200k_base")
+    promise = import("https://esm.sh/gpt-tokenizer@3.4.0/encoding/o200k_base")
       .then((mod) => {
-        gptEncode = mod.encode;
-        gptDecode = mod.decode;
-        status[name] = "ready";
+        state.gpt = { encode: mod.encode, decode: mod.decode };
+        state.status[name] = "ready";
       })
       .catch((err) => {
         console.error("Failed to load gpt-tokenizer:", err);
-        status[name] = "error";
+        state.status[name] = "error";
       });
   } else if (profile.type === "ctoc") {
     const vocabUrl = new URL("../data/claude-vocab.json", import.meta.url).href;
     promise = loadClaudeTokenizer(vocabUrl)
-      .then(() => { status[name] = "ready"; })
+      .then(() => { state.status[name] = "ready"; })
       .catch((err) => {
         console.error("Failed to load Claude tokenizer:", err);
-        status[name] = "error";
+        state.status[name] = "error";
       });
   } else if (profile.type === "hf") {
     promise = loadHfLibrary()
       .then((AutoTokenizer) => AutoTokenizer.from_pretrained(profile.hfRepo))
       .then((tokenizer) => {
-        hfTokenizers[name] = tokenizer;
-        status[name] = "ready";
+        state.hf[name] = tokenizer;
+        state.status[name] = "ready";
       })
       .catch((err) => {
         console.error(`Failed to load tokenizer for ${name}:`, err);
-        status[name] = "error";
+        state.status[name] = "error";
       });
   } else {
     return Promise.resolve();
   }
 
-  loadPromises[name] = promise.then(() => {
+  state.promises[name] = promise.then(() => {
     if (onReady) onReady(name);
   });
-  return loadPromises[name];
+  return state.promises[name];
 }
 
 // Heuristic fallback (used while tokenizers are loading or on error)

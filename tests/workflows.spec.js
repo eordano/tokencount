@@ -514,7 +514,6 @@ test.describe("Mobile native model selector", () => {
     await snap(page, "10-mobile-compare-model-changed", testInfo);
 
     await expect(compareSelect).toHaveValue("deepseek");
-    await expect(page.locator("#model-select-native-single")).toHaveValue("deepseek");
   });
 });
 

@@ -3,8 +3,15 @@
   "version": "1.0.0",
   "description": "Side-by-side text diff with token counts across 9 LLM tokenizers",
   "main": "index.js",
+  "bin": {
+    "tokencount": "dist/tokencount.mjs"
+  },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build:offline": "node scripts/build-offline.mjs",
+    "build:cli": "node scripts/build-cli.mjs",
+    "test:cli": "node tests/cli.test.mjs",
+    "test:bundle": "node scripts/build-offline.mjs && npx playwright test --config playwright.bundle.config.js"
   },
   "repository": {
     "type": "git",
@@ -12,8 +19,11 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "AGPL-3.0-only",
   "devDependencies": {
-    "@playwright/test": "^1.58.2"
+    "@huggingface/transformers": "3.8.1",
+    "@playwright/test": "^1.58.2",
+    "esbuild": "^0.27.3",
+    "gpt-tokenizer": "3.4.0"
   }
 }

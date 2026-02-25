@@ -3,3 +3,7 @@ node_modules/
 *.log
 test-results/
 tests/screenshots/
+dist/
+*.tar.gz
+.bundle-tmp/
+result

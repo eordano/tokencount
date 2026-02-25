@@ -92,12 +92,12 @@
       apps = forEachSystem ({ pkgs }: {
         default = {
           type = "app";
-          program = "${self.packages.${pkgs.system}.default}/bin/tokencount";
+          program = "${self.packages.${pkgs.stdenv.hostPlatform.system}.default}/bin/tokencount";
         };
       });
 
       packages = forEachSystem ({ pkgs }: {
-        default = self.packages.${pkgs.system}.build-cli;
+        default = self.packages.${pkgs.stdenv.hostPlatform.system}.build-cli;
 
         test-e2e = pkgs.writeShellApplication {
           name = "test-e2e";
@@ -133,7 +133,7 @@
           version = "1.0.0";
 
           src = self;
-          npmDepsHash = "sha256-u00qysswxof8ivJIM2qsl5rkyn/TYuAnFlofBiqSfvY=";
+          npmDepsHash = "sha256-lRek5RKHZt1PbGQ3wJwaBxNxb7wHrWqFpUT0qaDTryE=";
 
           env = {
             MODELS_DIR = hfModels { inherit pkgs; };
@@ -186,7 +186,7 @@
           version = "1.0.0";
 
           src = self;
-          npmDepsHash = "sha256-u00qysswxof8ivJIM2qsl5rkyn/TYuAnFlofBiqSfvY=";
+          npmDepsHash = "sha256-lRek5RKHZt1PbGQ3wJwaBxNxb7wHrWqFpUT0qaDTryE=";
 
           env = {
             MODELS_DIR = hfModels { inherit pkgs; };

@@ -508,6 +508,7 @@ function render() {
 // ===== Compare mode =====
 function enterCompareMode() {
   compareMode = true;
+  mobileTab = "b";
   if (!textB) {
     textB = textA;
     textareaB.value = textB;

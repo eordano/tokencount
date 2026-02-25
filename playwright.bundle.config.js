@@ -4,6 +4,7 @@ import baseConfig from "./playwright.config.js";
 
 export default {
   ...baseConfig,
+  testMatch: "workflows.spec.js",
   use: {
     ...baseConfig.use,
     baseURL: "http://localhost:8001",

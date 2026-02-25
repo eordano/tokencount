@@ -221,10 +221,12 @@ function assembleHtml(interceptorJs) {
   const safeInterceptor = interceptorJs.replaceAll("</script", "<\\/script");
   const safeBundle = bundleJs.replaceAll("</script", "<\\/script");
 
-  // Replace module script with interceptor + bundle
+  // Replace module script with interceptor + bundle.
+  // Use a function replacement to avoid $-pattern expansion in the
+  // replacement string (minified JS contains $' $` etc.).
   out = out.replace(
     /<script type="module" src="js\/app\.js"><\/script>/,
-    `<script>${safeInterceptor}</script>\n<script>${safeBundle}</script>`
+    () => `<script>${safeInterceptor}</script>\n<script>${safeBundle}</script>`
   );
 
   const outPath = path.join(DIST, "tokencount.html");

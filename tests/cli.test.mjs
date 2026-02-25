@@ -126,6 +126,55 @@ test("empty stdin returns 0 tokens", () => {
   assert(count === 0, `expected 0 tokens, got ${count}`);
 });
 
+// ── Share mode ──────────────────────────────────────────────────────────
+
+test("--share with stdin prints URL with ?b= param", () => {
+  const out = run("-s", { input: "Hello, world!" });
+  assert(out.includes("?b="), "should contain ?b= query param");
+  assert(out.includes("eordano.com"), "should use default base URL");
+});
+
+test("--share with two files prints URL and comparison to stderr", () => {
+  const f1 = path.join(ROOT, "README.md");
+  const f2 = path.join(ROOT, "package.json");
+  const out = run(`-s "${f1}" "${f2}"`);
+  assert(out.includes("?b="), "should contain ?b= query param");
+});
+
+test("--share URL decodes to valid JSON with a and b fields", () => {
+  const out = run("-s", { input: "test text" });
+  const url = new URL(out.trim());
+  const b64 = url.searchParams.get("b");
+  assert(b64, "should have b param");
+  // Decode base64url
+  let raw = b64.replace(/-/g, "+").replace(/_/g, "/");
+  while (raw.length % 4) raw += "=";
+  const json = Buffer.from(raw, "base64").toString("utf8");
+  const obj = JSON.parse(json);
+  assert(obj.a === "test text", `expected a='test text', got '${obj.a}'`);
+  assert(typeof obj.b === "string", "should have b field");
+  assert(typeof obj.t === "object", "should have t (tokens) field");
+  assert(typeof obj.t.a === "number" && obj.t.a > 0, "should have token count for a");
+});
+
+test("--share with --model includes model in payload", () => {
+  const out = run("-s -m openai", { input: "Hello" });
+  const url = new URL(out.trim());
+  const b64 = url.searchParams.get("b");
+  let raw = b64.replace(/-/g, "+").replace(/_/g, "/");
+  while (raw.length % 4) raw += "=";
+  const obj = JSON.parse(Buffer.from(raw, "base64").toString("utf8"));
+  assert(obj.m === "openai", `expected model 'openai', got '${obj.m}'`);
+});
+
+test("--share respects TOKEN_COUNT_URL env var", () => {
+  const result = execSync(
+    `echo "hi" | node "${CLI}" -s`,
+    { cwd: ROOT, encoding: "utf8", env: { ...process.env, TOKEN_COUNT_URL: "http://localhost:8000" } }
+  );
+  assert(result.includes("http://localhost:8000/?b="), `expected custom base URL, got: ${result.trim()}`);
+});
+
 // ── Summary ──────────────────────────────────────────────────────────────
 
 console.log(`\n${passed} passed, ${failed} failed`);

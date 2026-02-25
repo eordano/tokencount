@@ -17,6 +17,7 @@ if (process.env.BROWSER_PATH) {
 
 export default defineConfig({
   testDir: "./tests",
+  testMatch: "*.spec.js",
   timeout: 60000,
   expect: { timeout: 10000 },
   use: {

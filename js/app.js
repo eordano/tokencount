@@ -8,7 +8,7 @@ import {
   isReady,
   getStatus,
 } from "./tokenizer.js";
-import { encodePayload, decodePayload } from "./zbase32.js";
+import { encodePayload, decodePayload, decodePayloadBase64 } from "./zbase32.js";
 
 // ===== State =====
 let textA = "";
@@ -668,32 +668,31 @@ function showToast(message) {
 // ===== Load from URL =====
 function loadFromURL() {
   const params = new URLSearchParams(window.location.search);
-  const encoded = params.get("d");
-  if (encoded) {
-    const decoded = decodePayload(encoded);
-    if (decoded) {
-      textA = decoded.a;
-      textB = decoded.b;
-      textareaA.value = textA;
-      textareaB.value = textB;
-      // Restore model if shared
-      if (decoded.m && MODEL_PROFILES.find((p) => p.name === decoded.m)) {
-        model = decoded.m;
-        savePrefs();
-      }
-      // Restore pre-computed token counts
-      if (decoded.t && typeof decoded.t.a === "number" && typeof decoded.t.b === "number") {
-        preTokens = { a: decoded.t.a, b: decoded.t.b, model: model };
-      }
-      // Restore token view state
-      if (decoded.h) {
-        highlightA = decoded.h.includes("a");
-        highlightB = decoded.h.includes("b");
-      }
-      // Enter compare mode if both texts exist and differ
-      if (textA && textB) {
-        compareMode = true;
-      }
+  const zb32 = params.get("d");
+  const b64 = params.get("b");
+  const decoded = zb32 ? decodePayload(zb32) : b64 ? decodePayloadBase64(b64) : null;
+  if (decoded) {
+    textA = decoded.a;
+    textB = decoded.b;
+    textareaA.value = textA;
+    textareaB.value = textB;
+    // Restore model if shared
+    if (decoded.m && MODEL_PROFILES.find((p) => p.name === decoded.m)) {
+      model = decoded.m;
+      savePrefs();
+    }
+    // Restore pre-computed token counts
+    if (decoded.t && typeof decoded.t.a === "number" && typeof decoded.t.b === "number") {
+      preTokens = { a: decoded.t.a, b: decoded.t.b, model: model };
+    }
+    // Restore token view state
+    if (decoded.h) {
+      highlightA = decoded.h.includes("a");
+      highlightB = decoded.h.includes("b");
+    }
+    // Enter compare mode if both texts exist and differ
+    if (textA && textB) {
+      compareMode = true;
     }
   }
 }

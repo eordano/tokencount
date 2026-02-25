@@ -9,6 +9,8 @@ import { loadModel, countTokens, MODEL_NAMES } from "./lib/tokenizer.mjs";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+const DEFAULT_BASE_URL = "https://tokencount.eordano.com/";
+
 const HELP = `Usage: tokencount [options] [path...]
 
 Count tokens in files or stdin using LLM tokenizers.
@@ -16,22 +18,29 @@ Count tokens in files or stdin using LLM tokenizers.
 Options:
   -m, --model <name>   Tokenizer model (default: claude)
   -a, --all            Show counts for all models
+  -s, --share          Print a shareable URL instead of counts
   -h, --help           Show this help
 
 Models: ${MODEL_NAMES.join(", ")}
 
 When no paths are given, reads from stdin.
-Directories are recursed; binary files are skipped.`;
+Directories are recursed; binary files are skipped.
+
+Share mode (-s) takes one or two files (or stdin) and prints a URL
+that opens the web app with the text pre-filled. Use two files to
+get a side-by-side diff. Override the base URL with TOKEN_COUNT_URL.`;
 
 // ── Arg parsing ──────────────────────────────────────────────────────────
 
 function parseArgs(argv) {
-  const args = { model: "claude", all: false, help: false, paths: [] };
+  const args = { model: "claude", all: false, share: false, help: false, paths: [] };
   let i = 0;
   while (i < argv.length) {
     const arg = argv[i];
     if (arg === "-h" || arg === "--help") {
       args.help = true;
+    } else if (arg === "-s" || arg === "--share") {
+      args.share = true;
     } else if (arg === "-a" || arg === "--all") {
       args.all = true;
     } else if (arg === "-m" || arg === "--model") {
@@ -114,6 +123,21 @@ function expandPaths(paths) {
   return files;
 }
 
+// ── URL sharing ─────────────────────────────────────────────────────────
+
+function base64UrlEncode(buf) {
+  return buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function buildShareUrl(textA, textB, model, tokens) {
+  const obj = { a: textA, b: textB };
+  if (model && model !== "claude") obj.m = model;
+  if (tokens) obj.t = tokens;
+  const encoded = base64UrlEncode(Buffer.from(JSON.stringify(obj), "utf8"));
+  const base = process.env.TOKEN_COUNT_URL || DEFAULT_BASE_URL;
+  return `${base.replace(/\/$/, "")}/?b=${encoded}`;
+}
+
 // ── Output formatting ────────────────────────────────────────────────────
 
 function formatLine(count, label) {
@@ -142,13 +166,6 @@ async function main() {
     }
   }
 
-  const modelsDir = findModelsDir();
-
-  // Load requested models
-  for (const m of models) {
-    await loadModel(m, modelsDir);
-  }
-
   // Read input
   let inputs; // [{ name, text }]
   if (args.paths.length === 0) {
@@ -162,6 +179,42 @@ async function main() {
   } else {
     const files = expandPaths(args.paths);
     inputs = files.map((f) => ({ name: f, text: fs.readFileSync(f, "utf8") }));
+  }
+
+  const modelsDir = findModelsDir();
+
+  // Load requested models
+  for (const m of models) {
+    await loadModel(m, modelsDir);
+  }
+
+  // Share mode — show comparison and print URL
+  if (args.share) {
+    if (inputs.length > 2) {
+      process.stderr.write("Error: --share accepts at most two files (text A and text B)\n");
+      process.exit(1);
+    }
+    const textA = inputs[0]?.text || "";
+    const textB = inputs[1]?.text || "";
+    const labelA = inputs[0]?.name || "A";
+    const labelB = inputs[1]?.name || "B";
+    const countA = countTokens(args.model, textA);
+    const countB = inputs.length > 1 ? countTokens(args.model, textB) : 0;
+    const delta = countB - countA;
+    const sign = delta > 0 ? "+" : "";
+
+    process.stderr.write(`  ${args.model}\n`);
+    process.stderr.write(formatLine(countA, labelA));
+    if (inputs.length > 1) {
+      process.stderr.write(formatLine(countB, labelB));
+      process.stderr.write(formatLine(`${sign}${delta}`, "delta"));
+    }
+    process.stderr.write("\n");
+
+    const tokens = { a: countA, b: countB };
+    const url = buildShareUrl(textA, textB, args.model, tokens);
+    process.stdout.write(url + "\n");
+    return;
   }
 
   // Count and output

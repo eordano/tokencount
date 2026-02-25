@@ -562,6 +562,88 @@ test.describe("Share workflow", () => {
 });
 
 // ─────────────────────────────────────────────
+// 11b. Base64 URL sharing
+// ─────────────────────────────────────────────
+test.describe("Base64 URL sharing", () => {
+  test("loading a base64url-encoded ?b= URL restores state", async ({ page }, testInfo) => {
+    const payload = JSON.stringify({ a: SAMPLE_TEXT_A, b: SAMPLE_TEXT_B });
+    const bytes = new TextEncoder().encode(payload);
+    const binStr = Array.from(bytes, (b) => String.fromCharCode(b)).join("");
+    const b64 = btoa(binStr).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+    await page.goto(`/?b=${b64}`);
+    await page.waitForSelector("#textarea-a");
+    await page.waitForTimeout(500);
+    await snap(page, "11b-base64-loaded", testInfo);
+
+    await expect(page.locator("#textarea-a")).toHaveValue(SAMPLE_TEXT_A);
+    await expect(page.locator("#textarea-b")).toHaveValue(SAMPLE_TEXT_B);
+    await expect(page.locator("#diff-summary")).toBeVisible();
+  });
+
+  test("loading a standard base64 ?b= URL (with +/=) restores state", async ({ page }, testInfo) => {
+    const payload = JSON.stringify({ a: SAMPLE_TEXT_A, b: SAMPLE_TEXT_B });
+    const bytes = new TextEncoder().encode(payload);
+    const binStr = Array.from(bytes, (b) => String.fromCharCode(b)).join("");
+    const b64 = btoa(binStr); // standard base64 with + / =
+
+    await page.goto(`/?b=${encodeURIComponent(b64)}`);
+    await page.waitForSelector("#textarea-a");
+    await page.waitForTimeout(500);
+    await snap(page, "11b-base64-standard-loaded", testInfo);
+
+    await expect(page.locator("#textarea-a")).toHaveValue(SAMPLE_TEXT_A);
+    await expect(page.locator("#textarea-b")).toHaveValue(SAMPLE_TEXT_B);
+  });
+
+  test("base64 URL with model and highlight state", async ({ page }, testInfo) => {
+    const payload = JSON.stringify({ a: SAMPLE_TEXT_A, b: SAMPLE_TEXT_B, m: "openai", h: "ab" });
+    const bytes = new TextEncoder().encode(payload);
+    const binStr = Array.from(bytes, (b) => String.fromCharCode(b)).join("");
+    const b64 = btoa(binStr).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+    await page.goto(`/?b=${b64}`);
+    await page.waitForSelector("#textarea-a");
+    await page.waitForTimeout(500);
+    await snap(page, "11b-base64-with-model", testInfo);
+
+    await expect(page.locator("#textarea-a")).toHaveValue(SAMPLE_TEXT_A);
+    await expect(page.locator("#textarea-b")).toHaveValue(SAMPLE_TEXT_B);
+    await expect(page.locator("#diff-summary")).toBeVisible();
+  });
+
+  test("?d= (zbase32) takes precedence when both params present", async ({ page }, testInfo) => {
+    // Build a zbase32 URL via the share button
+    await page.locator("#textarea-a").fill(SAMPLE_TEXT_A);
+    await page.waitForTimeout(200);
+    await page.locator("#compare-btn").click();
+    await page.waitForTimeout(200);
+    await fillTextareaBInCompareMode(page, SAMPLE_TEXT_B, testInfo);
+    await page.waitForTimeout(300);
+    await page.locator("#share-btn").click();
+    await page.waitForTimeout(300);
+
+    const shareUrl = new URL(page.url());
+    const zb32Param = shareUrl.searchParams.get("d");
+
+    // Build a base64 URL with different text
+    const wrongPayload = JSON.stringify({ a: "wrong", b: "data" });
+    const bytes = new TextEncoder().encode(wrongPayload);
+    const binStr = Array.from(bytes, (b) => String.fromCharCode(b)).join("");
+    const wrongB64 = btoa(binStr).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+    // Load with both params — zbase32 should win
+    await page.evaluate(() => localStorage.clear());
+    await page.goto(`/?d=${zb32Param}&b=${wrongB64}`);
+    await page.waitForSelector("#textarea-a");
+    await page.waitForTimeout(500);
+
+    await expect(page.locator("#textarea-a")).toHaveValue(SAMPLE_TEXT_A);
+    await expect(page.locator("#textarea-b")).toHaveValue(SAMPLE_TEXT_B);
+  });
+});
+
+// ─────────────────────────────────────────────
 // 12. Cross-language tokenization
 // ─────────────────────────────────────────────
 test.describe("Cross-language tokenization", () => {

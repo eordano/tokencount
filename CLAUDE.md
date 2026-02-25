@@ -1,88 +1,79 @@
-A vanilla JavaScript web app that compares two texts side-by-side, showing
-word-level diffs and token counts across different tokenizers. No framework,
-no build step.
+Vanilla JS web app: side-by-side text diff with token counts across 9
+tokenizers. No framework. Also ships an offline bundle and a CLI tool.
 
 ## Project structure
 
 ```
-index.html                Entry point, loads js/app.js as ES6 module
-css/style.css             All styles (dark theme, OKLCH colors, responsive)
-js/app.js                 Main app: state, events, rendering, UI sync
-js/diff.js                Word-level LCS diff algorithm
-js/tokenizer.js           Multi-model tokenizer interface, lazy loading, fallback heuristics
-js/claude-tokenizer.js    Trie-based Claude tokenizer using local vocab
-js/zbase32.js             zbase32 encoding/decoding for URL sharing
+index.html                Entry point (ES6 module)
+css/style.css             Dark theme, OKLCH colors, responsive
+js/app.js                 State, events, rendering, UI sync
+js/diff.js                Word-level LCS diff
+js/tokenizer.js           Multi-model tokenizer: lazy loading, fallback heuristics
+js/claude-tokenizer.js    Trie-based Claude tokenizer (local vocab)
+js/zbase32.js             zbase32 encoding for URL sharing
 data/claude-vocab.json    36,495 Claude vocabulary tokens
-tests/workflows.spec.js   Playwright E2E tests (desktop + mobile)
-playwright.config.js      Playwright config (auto-starts dev server)
-package.json              Dev dependencies (Playwright)
+cli/tokencount.mjs       CLI: count tokens from files/stdin
+cli/lib/tokenizer.mjs     CLI tokenizer wrapper
+scripts/build-offline.mjs Offline HTML bundle (esbuild)
+scripts/build-cli.mjs     CLI binary + model data
+tests/workflows.spec.js   Playwright E2E (desktop + mobile)
+tests/cli.test.mjs        CLI integration tests
+playwright.config.js      Dev server on :8000
+playwright.bundle.config.js  Offline bundle on :8001
+package.json              Playwright, esbuild, gpt-tokenizer, @huggingface/transformers
+flake.nix                 Nix dev shell + builds (vendored HF models)
+.github/workflows/        deploy, e2e, offline-bundle, preview
 ```
 
-## Key design decisions
+## Design
 
-- **No build tools**: Everything runs directly in the browser via ES6 modules.
-  External libraries load from CDN (esm.sh, jsdelivr).
-- **Lazy loading**: Tokenizer models load on demand when the user selects them.
-  A heuristic estimator (character-ratio based, CJK-aware) provides approximate
-  counts while models load.
-- **Responsive layout**: Desktop uses CSS grid for side-by-side panels. Mobile
-  (<768px) switches to tab-based navigation. State syncs between both views.
-- **Token overlay**: Always-on token boundary visualization rendered behind
-  the textarea. Debounced re-rendering on input. Toggle per panel.
-- **Two modes**: Single-panel mode for counting tokens in one text. Compare
-  mode for side-by-side diff with token deltas.
-- **URL sharing**: Payload (texts, model, highlight state, pre-computed token
-  counts) is JSON-serialized, UTF-8 encoded, zbase32 encoded into `?d=` query
-  param. No server needed.
+- No build tools (web): ES6 modules in browser. CDN libs (esm.sh, jsdelivr).
+- Lazy loading: Models load on demand. CJK-aware heuristic while loading.
+- Responsive: CSS grid desktop, tab navigation mobile (<768px).
+- Token overlay: Visualization behind textarea. Debounced. Per-panel toggle.
+- Two modes: Single-panel token counting. Compare mode for diff + deltas.
+- URL sharing: JSON → UTF-8 → zbase32 → `?d=` param. No server.
+- Offline bundle: `scripts/build-offline.mjs` → single HTML with all models.
+- CLI: `cli/tokencount.mjs` — all 9 models. Build: `scripts/build-cli.mjs`.
+- Nix: `flake.nix` — dev shells + builds, vendored HF models.
 
-## How to run locally
+## Run locally
 
-```bash
-python3 -m http.server 8000
-# or: npx http-server
-```
+`python3 -m http.server 8000` — no install required.
 
-Open http://localhost:8000 in a browser. No install required.
+## Exports
 
-## Deployment
-
-GitHub Actions (`.github/workflows/deploy.yml`) deploys to GitHub Pages on push
-to `main`. The entire repo is uploaded as a static site.
-
-## Module exports
-
-- `diff.js`: `computeDiff(textA, textB)` → array of `{type, text}` segments
+- `diff.js`: `computeDiff(textA, textB)` → `[{type, text}]`
 - `tokenizer.js`: `MODEL_PROFILES`, `countTokens(text, name)`,
   `encodeTokens(text, name)`, `countAllTokenizers(text)`,
   `loadModel(name, onReady)`, `isReady(name)`, `getStatus(name)`
-- `claude-tokenizer.js`: `loadClaudeTokenizer()`, `getClaudeTokenizer()`
+- `claude-tokenizer.js`: `loadClaudeTokenizer(vocabUrl)`,
+  `getClaudeTokenizer()`, `ClaudeTokenizer`
 - `zbase32.js`: `encodePayload(textA, textB, opts)`, `decodePayload(encoded)`
 
 ## Conventions
 
-- Pure vanilla JS, no TypeScript, no JSX
-- ES6 module imports/exports throughout
-- CSS custom properties for theming (defined at top of style.css)
-- E2E tests via Playwright (`npx playwright test`), desktop + mobile viewports
-- Commit messages use conventional style: `feat:`, `fix:`, etc.
+- Vanilla JS, ES6 modules, no TypeScript
+- CSS custom properties for theming (top of style.css)
+- Playwright E2E: `npx playwright test`
+- Commits: `feat:`, `fix:`, etc.
 
 ## Common tasks
 
-**Add a new tokenizer model**: Add an entry to `MODEL_PROFILES` in
-`js/tokenizer.js` with name, color, and loader type. If it uses HuggingFace,
-add the model ID to the HuggingFace loader switch block. Update the model
-count references in documentation.
+Add a tokenizer model: Add to `MODEL_PROFILES` in `js/tokenizer.js` (name,
+color, loader type). Also update: `cli/lib/tokenizer.mjs`,
+`scripts/build-offline.mjs` HF_REPOS, `scripts/build-cli.mjs` REPO_MAP,
+`flake.nix` model hashes, README.md model table.
 
-**Change the diff algorithm**: Edit `js/diff.js`. The `computeDiff` function
-returns an array of `{type: 'added'|'removed'|'unchanged', text: string}`
-segments. The app renders these directly.
+Change diff algorithm: Edit `js/diff.js` — `computeDiff` returns
+`[{type: 'added'|'removed'|'unchanged', text}]`.
 
-**Modify the diff summary**: The diff summary strip and diff card are rendered
-in `js/app.js` in the `renderDiffSummary` and `renderDiffCard` functions. The
-model dropdown is managed by `openDropdown`/`closeDropdown`.
+Modify diff summary: `renderDiffSummary` and `renderDiffCard` in `js/app.js`.
+Dropdown: `openDropdown`/`closeDropdown`.
 
-**Update Claude vocabulary**: Replace `data/claude-vocab.json` with a new
-JSON array of token strings. The trie rebuilds automatically on load.
+Update Claude vocab: Replace `data/claude-vocab.json` (JSON array of strings).
 
-**Run E2E tests**: `npx playwright test` (installs deps from package.json,
-auto-starts a dev server on port 8000).
+Tests: `npx playwright test` | `npm run test:bundle` | `npm run test:cli`
+
+Build: `npm run build:offline` → `dist/tokencount.html` |
+`npm run build:cli` → `dist/tokencount.mjs` + `dist/models/`

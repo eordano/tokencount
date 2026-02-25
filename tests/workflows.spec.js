@@ -27,14 +27,10 @@ function isMobile(testInfo) {
 }
 
 /**
- * In compare mode on mobile, panel B is mobile-hidden by default.
- * Switch to tab B before interacting with textarea-b.
+ * In compare mode on mobile, panel B is shown by default (Modified tab active).
+ * This helper ensures we're on tab B before filling textarea-b.
  */
 async function fillTextareaBInCompareMode(page, text, testInfo) {
-  if (isMobile(testInfo)) {
-    await page.locator('.mobile-tab[data-tab="b"]').click();
-    await page.waitForTimeout(200);
-  }
   await page.locator("#textarea-b").fill(text);
 }
 
@@ -418,15 +414,11 @@ test.describe("Mobile tabs", () => {
 
     const tabA = page.locator('.mobile-tab[data-tab="a"]');
     const tabB = page.locator('.mobile-tab[data-tab="b"]');
-    await expect(tabA).toHaveClass(/active/);
-
-    await tabB.click();
-    await page.waitForTimeout(300);
-    await snap(page, "09-mobile-tab-b-active", testInfo);
-
+    // Compare mode defaults to Modified (tab B) on mobile
     await expect(tabB).toHaveClass(/active/);
     await expect(page.locator("#panel-a")).toHaveClass(/mobile-hidden/);
     await expect(page.locator("#panel-b")).not.toHaveClass(/mobile-hidden/);
+    await snap(page, "09-mobile-tab-b-active", testInfo);
 
     await tabA.click();
     await page.waitForTimeout(300);

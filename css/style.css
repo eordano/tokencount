@@ -200,20 +200,21 @@ body {
 /* Close button for panel B */
 .close-panel-btn {
   margin-left: auto;
-  background: none;
-  border: none;
-  color: var(--muted-foreground);
-  font-size: 18px;
+  background: transparent;
+  border: 1px solid var(--primary);
+  color: var(--primary);
+  font-size: 14px;
+  font-weight: 600;
   cursor: pointer;
-  padding: 2px 6px;
+  padding: 2px 8px;
   border-radius: 4px;
   line-height: 1;
-  transition: background 0.15s, color 0.15s;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 
 .close-panel-btn:hover {
-  background: var(--secondary);
-  color: var(--foreground);
+  background: var(--primary);
+  color: var(--primary-foreground);
 }
 
 /* ===== Model Dropdown ===== */
@@ -370,18 +371,20 @@ body {
   gap: 6px;
   padding: 8px 14px 10px 16px;
   border-radius: 6px;
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--muted-foreground);
+  border: 1px solid var(--primary);
+  background: var(--primary);
+  color: var(--primary-foreground);
   font-size: 13px;
   font-family: var(--font-mono);
+  font-weight: 600;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 
 .compare-btn:hover {
-  background: var(--secondary);
-  color: var(--foreground);
+  background: oklch(0.6 0.2 145);
+  border-color: oklch(0.6 0.2 145);
+  color: var(--primary-foreground);
 }
 
 /* ===== Mobile Tabs ===== */
@@ -513,18 +516,20 @@ body {
   gap: 6px;
   padding: 6px 12px;
   border-radius: 6px;
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--foreground);
+  border: 1px solid var(--primary);
+  background: var(--primary);
+  color: var(--primary-foreground);
   font-size: 13px;
   font-family: var(--font-mono);
+  font-weight: 600;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background 0.15s, border-color 0.15s;
   white-space: nowrap;
 }
 
 .btn:hover {
-  background: var(--muted);
+  background: oklch(0.6 0.2 145);
+  border-color: oklch(0.6 0.2 145);
 }
 
 .btn:disabled {

@@ -1,0 +1,19 @@
+{
+  "name": "tokencount",
+  "version": "1.0.0",
+  "description": "Side-by-side text diff with token counts across 9 LLM tokenizers",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "gh-eordano:eordano/tokencount"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@playwright/test": "^1.58.2"
+  }
+}

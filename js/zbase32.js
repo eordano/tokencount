@@ -36,7 +36,10 @@ function zbase32Decode(str) {
 export function encodePayload(textA, textB, opts) {
   const obj = { a: textA, b: textB };
   if (opts) {
-    if (opts.model) obj.m = opts.model;
+    // Support both old single model and new per-panel models
+    if (opts.modelA) obj.mA = opts.modelA;
+    if (opts.modelB) obj.mB = opts.modelB;
+    if (opts.model) obj.m = opts.model; // backward compat
     if (opts.highlight) obj.h = opts.highlight;
     if (opts.tokens) obj.t = opts.tokens;
   }
@@ -52,7 +55,7 @@ export function decodePayload(encoded) {
     const json = new TextDecoder().decode(bytes);
     const obj = JSON.parse(json);
     if (typeof obj.a === "string" && typeof obj.b === "string") {
-      return { a: obj.a, b: obj.b, m: obj.m || null, h: obj.h || null, t: obj.t || null };
+      return { a: obj.a, b: obj.b, m: obj.m || null, mA: obj.mA || null, mB: obj.mB || null, h: obj.h || null, t: obj.t || null };
     }
     return null;
   } catch {
@@ -88,7 +91,9 @@ function base64UrlEncode(bytes) {
 export function encodePayloadBase64(textA, textB, opts) {
   const obj = { a: textA, b: textB };
   if (opts) {
-    if (opts.model) obj.m = opts.model;
+    if (opts.modelA) obj.mA = opts.modelA;
+    if (opts.modelB) obj.mB = opts.modelB;
+    if (opts.model) obj.m = opts.model; // backward compat
     if (opts.highlight) obj.h = opts.highlight;
     if (opts.tokens) obj.t = opts.tokens;
   }
@@ -102,7 +107,7 @@ export function decodePayloadBase64(encoded) {
     const json = new TextDecoder().decode(bytes);
     const obj = JSON.parse(json);
     if (typeof obj.a === "string" && typeof obj.b === "string") {
-      return { a: obj.a, b: obj.b, m: obj.m || null, h: obj.h || null, t: obj.t || null };
+      return { a: obj.a, b: obj.b, m: obj.m || null, mA: obj.mA || null, mB: obj.mB || null, h: obj.h || null, t: obj.t || null };
     }
     return null;
   } catch {

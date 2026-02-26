@@ -14,6 +14,15 @@
       <section class="panel" id="panel-a">
         <div class="panel-header">
           <span class="panel-title" id="panel-title-a">Input text</span>
+          <div class="panel-model-selector">
+            <button class="model-selector" id="model-selector-a">
+              <span class="model-dot" id="model-dot-a"></span>
+              <span class="model-name" id="model-name-a"></span>
+              <svg class="chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <div class="model-dropdown" id="model-dropdown-a" style="display:none"></div>
+            <select class="model-select-native" id="model-select-native-a"></select>
+          </div>
         </div>
         <div class="textarea-wrap">
           <textarea id="textarea-a" placeholder="Paste text to estimate tokens..." spellcheck="false"></textarea>
@@ -42,12 +51,28 @@
           </svg>
           Compare two texts
         </button>
+        <button class="compare-btn" id="compare-models-btn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="6" cy="12" r="3"/><circle cx="18" cy="12" r="3"/>
+            <path d="M9 12h6"/>
+          </svg>
+          Compare two models
+        </button>
       </div>
 
       <!-- Panel B (compare mode only) -->
       <section class="panel" id="panel-b" style="display:none">
         <div class="panel-header">
           <span class="panel-title" id="panel-title-b">Modified</span>
+          <div class="panel-model-selector">
+            <button class="model-selector" id="model-selector-b">
+              <span class="model-dot" id="model-dot-b"></span>
+              <span class="model-name" id="model-name-b"></span>
+              <svg class="chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <div class="model-dropdown" id="model-dropdown-b" style="display:none"></div>
+            <select class="model-select-native" id="model-select-native-b"></select>
+          </div>
           <button class="close-panel-btn" id="close-panel-b" title="Exit compare mode">&times;</button>
         </div>
         <div class="textarea-wrap">
@@ -74,16 +99,7 @@
 
       <!-- Diff summary strip (compare mode only) -->
       <div class="diff-summary" id="diff-summary" style="display:none">
-        <div class="diff-summary-model">
-          <button class="model-selector" id="model-selector-a">
-            <span class="model-dot" id="model-dot-a"></span>
-            <span class="model-name" id="model-name-a"></span>
-            <svg class="chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
-          </button>
-          <div class="all-models-row" id="all-models-a" style="display:none"></div>
-          <div class="model-dropdown" id="model-dropdown" style="display:none"></div>
-          <select class="model-select-native" id="model-select-native-compare"></select>
-        </div>
+        <div class="all-models-row" id="all-models-a" style="display:none"></div>
         <div class="diff-summary-hero">
           <span class="diff-hero-number" id="diff-hero-number">+0</span>
           <span class="diff-hero-label" id="diff-hero-label">tokens</span>
@@ -99,19 +115,6 @@
             Share
           </button>
         </div>
-      </div>
-
-      <!-- Diff card (compare mode) -->
-      <div class="diff-card" id="diff-card" style="display:none">
-        <div class="diff-card-header">
-          <span class="diff-card-label" id="diff-card-label">Word Diff</span>
-          <div class="diff-card-badges">
-            <span class="outline-badge badge-added" id="diff-stats-added">+0 words</span>
-            <span class="outline-badge badge-removed" id="diff-stats-removed">-0 words</span>
-            <span class="outline-badge badge-unchanged" id="diff-stats-unchanged">0 unchanged</span>
-          </div>
-        </div>
-        <div class="diff-card-body" id="diff-body"></div>
       </div>
     </main>
 

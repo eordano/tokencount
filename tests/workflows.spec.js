@@ -102,9 +102,7 @@ test.describe("Edit and compare token diff", () => {
     await expect(heroNumber).toBeVisible();
     // Hero shows +N, -N, ~+N, ~-N, or = (when counts are equal)
     expect(await heroNumber.textContent()).toMatch(/^[+\-=~]/);
-
-    await expect(page.locator("#diff-card")).toBeVisible();
-    await snap(page, "02-diff-card-visible", testInfo);
+    await snap(page, "02-compare-mode-complete", testInfo);
   });
 
   test("exit compare mode returns to single panel", async ({ page }, testInfo) => {
@@ -129,10 +127,10 @@ test.describe("Edit and compare token diff", () => {
 });
 
 // ─────────────────────────────────────────────
-// 3. Pure diff viewing
+// 3. Text comparison (token diff)
 // ─────────────────────────────────────────────
-test.describe("Pure diff viewing", () => {
-  test("paste two different texts and see word-level diff", async ({ page }, testInfo) => {
+test.describe("Text comparison", () => {
+  test("paste two different texts and see token diff summary", async ({ page }, testInfo) => {
     await page.locator("#textarea-a").fill(SAMPLE_TEXT_A);
     await page.waitForTimeout(200);
     await page.locator("#compare-btn").click();
@@ -140,13 +138,16 @@ test.describe("Pure diff viewing", () => {
 
     await fillTextareaBInCompareMode(page, SAMPLE_TEXT_B, testInfo);
     await page.waitForTimeout(500);
-    await snap(page, "03-two-texts-diffed", testInfo);
+    await snap(page, "03-two-texts-compared", testInfo);
 
-    const diffBody = page.locator("#diff-body");
-    await expect(diffBody).toBeVisible();
-    expect(await diffBody.locator(".diff-span-added").count()).toBeGreaterThan(0);
-    expect(await diffBody.locator(".diff-span-removed").count()).toBeGreaterThan(0);
-    await snap(page, "03-diff-detail", testInfo);
+    // Diff summary shows token difference
+    const diffSummary = page.locator("#diff-summary");
+    await expect(diffSummary).toBeVisible();
+    const heroNumber = page.locator("#diff-hero-number");
+    await expect(heroNumber).toBeVisible();
+    // Hero shows +N, -N, or = for token difference
+    expect(await heroNumber.textContent()).toMatch(/^[+\-=~]/);
+    await snap(page, "03-token-diff-summary", testInfo);
   });
 });
 
@@ -166,7 +167,7 @@ test.describe("Model switching (desktop dropdown)", () => {
     await page.waitForTimeout(200);
     await snap(page, "04-dropdown-open", testInfo);
 
-    const dropdown = page.locator("#model-dropdown");
+    const dropdown = page.locator("#model-dropdown-a");
     await expect(dropdown).toBeVisible();
 
     const gptOption = dropdown.locator('button[data-mode="openai"]');
@@ -187,7 +188,7 @@ test.describe("Model switching (desktop dropdown)", () => {
     await page.locator("#model-selector-a").click();
     await page.waitForTimeout(200);
 
-    const dropdown = page.locator("#model-dropdown");
+    const dropdown = page.locator("#model-dropdown-a");
     await expect(dropdown).toBeVisible();
 
     const dropdownBox = await dropdown.boundingBox();
@@ -367,6 +368,7 @@ test.describe("AI rewrite comparison", () => {
     await page.waitForTimeout(500);
     await snap(page, "07-rewrite-comparison", testInfo);
 
+    // Hero shows negative diff when rewrite is shorter
     expect(await page.locator("#diff-hero-number").textContent()).toMatch(/^-/);
     await snap(page, "07-token-savings-shown", testInfo);
   });
@@ -466,7 +468,7 @@ test.describe("Mobile native model selector", () => {
     await snap(page, "10-mobile-model-selector", testInfo);
 
     // Model selector is in diff summary strip on mobile
-    await expect(page.locator("#model-select-native-compare")).toBeVisible();
+    await expect(page.locator("#model-select-native-a")).toBeVisible();
     await expect(page.locator("#model-selector-a")).not.toBeVisible();
   });
 
@@ -477,35 +479,54 @@ test.describe("Mobile native model selector", () => {
     await page.waitForTimeout(300);
     await snap(page, "10-mobile-before-model-change", testInfo);
 
-    await page.locator("#model-select-native-compare").selectOption("openai");
+    await page.locator("#model-select-native-a").selectOption("openai");
     await page.waitForTimeout(500);
     await snap(page, "10-mobile-after-model-change", testInfo);
 
-    await expect(page.locator("#model-select-native-compare")).toHaveValue("openai");
+    await expect(page.locator("#model-select-native-a")).toHaveValue("openai");
   });
 
-  test("native select in compare mode diff summary", async ({ page }, testInfo) => {
+  test("native select in compare mode panel headers", async ({ page }, testInfo) => {
     test.skip(!isMobile(testInfo), "Mobile-only test");
 
     await page.locator("#textarea-a").fill(SAMPLE_TEXT_A);
     await page.waitForTimeout(200);
+
+    // TEXT COMPARE MODE: only panel A has model selector (same model for both texts)
     await page.locator("#compare-btn").click();
     await page.waitForTimeout(200);
 
-    await page.locator('.mobile-tab[data-tab="b"]').click();
+    // Switch to panel A to see the model selector (B tab is default, but model selector B is hidden)
+    await page.locator('.mobile-tab[data-tab="a"]').click();
     await page.waitForTimeout(200);
-    await page.locator("#textarea-b").fill(SAMPLE_TEXT_B);
-    await page.waitForTimeout(300);
+
+    const selectA = page.locator("#model-select-native-a");
+    await expect(selectA).toBeVisible();
     await snap(page, "10-mobile-compare-native-select", testInfo);
 
-    const compareSelect = page.locator("#model-select-native-compare");
-    await expect(compareSelect).toBeVisible();
+    // Panel B model selector should be hidden in text compare mode
+    const selectB = page.locator("#model-select-native-b");
+    await expect(selectB).toBeHidden();
 
-    await compareSelect.selectOption("deepseek");
-    await page.waitForTimeout(500);
-    await snap(page, "10-mobile-compare-model-changed", testInfo);
+    // Exit compare mode and test MODEL COMPARE MODE: both panels have model selectors
+    await page.locator('.mobile-tab[data-tab="b"]').click();
+    await page.waitForTimeout(200);
+    await page.locator("#close-panel-b").click();
+    await page.waitForTimeout(200);
 
-    await expect(compareSelect).toHaveValue("deepseek");
+    await page.locator("#compare-models-btn").click();
+    await page.waitForTimeout(200);
+
+    // In model compare mode, both selectors should be visible
+    await page.locator('.mobile-tab[data-tab="a"]').click();
+    await page.waitForTimeout(200);
+    await expect(selectA).toBeVisible();
+    await snap(page, "10-mobile-model-compare-select-a", testInfo);
+
+    await page.locator('.mobile-tab[data-tab="b"]').click();
+    await page.waitForTimeout(200);
+    await expect(selectB).toBeVisible();
+    await snap(page, "10-mobile-model-compare-select-b", testInfo);
   });
 });
 
@@ -688,7 +709,7 @@ test.describe("Full desktop workflow", () => {
     await page.waitForTimeout(200);
     await snap(page, "13-step6-dropdown-open", testInfo);
 
-    const gptOpt = page.locator('#model-dropdown button[data-mode="openai"]');
+    const gptOpt = page.locator('#model-dropdown-a button[data-mode="openai"]');
     if (await gptOpt.isVisible()) {
       await gptOpt.click();
       await page.waitForTimeout(500);

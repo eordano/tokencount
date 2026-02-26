@@ -5,7 +5,7 @@
 
   outputs = { self, nixpkgs }:
     let
-      supportedSystems = [ "x86_64-linux" "aarch64-linux" ];
+      supportedSystems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
       forEachSystem = f: nixpkgs.lib.genAttrs supportedSystems (system: f {
         pkgs = nixpkgs.legacyPackages.${system};
       });
@@ -96,9 +96,11 @@
         };
       });
 
-      packages = forEachSystem ({ pkgs }: {
+      packages = forEachSystem ({ pkgs }:
+        let isLinux = pkgs.stdenv.hostPlatform.isLinux; in
+        {
         default = self.packages.${pkgs.stdenv.hostPlatform.system}.build-cli;
-
+      } // nixpkgs.lib.optionalAttrs isLinux {
         test-e2e = pkgs.writeShellApplication {
           name = "test-e2e";
           runtimeInputs = [ pkgs.nodejs pkgs.python3 pkgs.chromium ];
@@ -127,7 +129,7 @@
             npx playwright test --config playwright.bundle.config.js "$@"
           '';
         };
-
+      } // {
         build-cli = pkgs.buildNpmPackage {
           pname = "tokencount";
           version = "1.0.0";
@@ -217,10 +219,13 @@
         };
       });
 
-      devShells = forEachSystem ({ pkgs }: {
+      devShells = forEachSystem ({ pkgs }:
+        let isLinux = pkgs.stdenv.hostPlatform.isLinux; in
+        {
         default = pkgs.mkShell {
-          packages = [ pkgs.nodejs pkgs.python3 pkgs.chromium ];
-          env = {
+          packages = [ pkgs.nodejs pkgs.python3 ]
+            ++ nixpkgs.lib.optionals isLinux [ pkgs.chromium ];
+          env = nixpkgs.lib.optionalAttrs isLinux {
             FONTCONFIG_FILE = fontsConf { inherit pkgs; };
             BROWSER_PATH = "${pkgs.chromium}/bin/chromium";
           };

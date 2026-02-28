@@ -15,13 +15,13 @@ framework, no build step. Also ships as an offline single-file bundle and a CLI.
 |-------|----------|--------|-----------------|
 | Claude | `claude` | Claude 4.6 Opus and all Claude 3+ models | Trie-based tokenizer ([ctoc](https://github.com/rohangpta/ctoc)) |
 | OpenAI | `openai` | GPT 5.2, Phi-4, and others (o200k_base) | [gpt-tokenizer](https://github.com/niieani/gpt-tokenizer) |
-| Gemini | `gemini` | Gemini 3.1 Pro and all Gemini models | HuggingFace AutoTokenizer |
-| DeepSeek | `deepseek` | DeepSeek V3 and others | HuggingFace AutoTokenizer |
-| Qwen | `qwen` | Qwen 3 and Qwen 2.5+ models | HuggingFace AutoTokenizer |
-| MiniMax | `minimax` | MiniMax-Text-01 | HuggingFace AutoTokenizer |
-| Llama | `llama` | All Llama 3 and 4 models | HuggingFace AutoTokenizer |
-| Mistral | `mistral` | Nemo, Small 24B, Pixtral | HuggingFace AutoTokenizer |
-| Grok | `grok` | Grok 1 and 2 (3 and 4 unknown) | HuggingFace AutoTokenizer |
+| Gemini | `gemini` | Gemini 3.1 Pro and all Gemini models | HF AutoTokenizer |
+| DeepSeek | `deepseek` | DeepSeek V3 and others | HF AutoTokenizer |
+| Qwen | `qwen` | Qwen 3 and Qwen 2.5+ models | HF AutoTokenizer |
+| MiniMax | `minimax` | MiniMax-Text-01 | HF AutoTokenizer |
+| Llama | `llama` | All Llama 3 and 4 models | HF AutoTokenizer |
+| Mistral | `mistral` | Nemo, Small 24B, Pixtral | HF AutoTokenizer |
+| Grok | `grok` | Grok 1 and 2 (3 and 4 unknown) | HF AutoTokenizer |
 
 Models lazy-load on first use with a CJK-aware heuristic estimator while loading.
 
@@ -39,20 +39,34 @@ Or use the deployed instance: https://tokencount.eordano.com
 diffs with token deltas. **Token overlay** visualizes boundaries on your text.
 **Share** encodes both texts as zbase32 in the URL — no server needed.
 
-## CLI
+## CLI (Rust)
+
+Native binary with all 9 tokenizers implemented from scratch — no tokenizer
+libraries, no runtime dependencies beyond the model data files.
 
 ```bash
 nix run github:eordano/tokencount <FILE>
 
-# Or after cloning this repo
+# Or build from source
+cargo build --release
+echo "Hello world" | ./target/release/tokencount        # default: Claude
+./target/release/tokencount -m openai src/*.rs           # specific model
+./target/release/tokencount -a myfile.txt                # all 9 models
+./target/release/tokencount -r --ignore node_modules .   # recursive
+```
+
+Run `tokencount --help` for full options (`-m`, `-a`, `-r`, `--ignore`,
+`--no-gitignore`, `-s`/`--share`).
+
+## CLI (Node.js)
+
+```bash
 npm run build:cli
 
 echo "Hello world" | dist/tokencount.mjs   # default: Claude
 dist/tokencount.mjs -m openai src/*.js     # specific model
 dist/tokencount.mjs -a myfile.txt          # all models
 ```
-
-Run `dist/tokencount.mjs --help` for full options.
 
 ## Offline Bundle
 
@@ -87,9 +101,10 @@ npm run test:cli      # CLI integration
 ### Nix
 
 ```bash
-nix develop           # dev shell
-nix run .#build-cli   # build CLI
-nix run .#test-e2e    # E2E tests
+nix develop              # dev shell
+nix build .#tokencount   # Rust CLI + model data
+nix build .#tokencount-js  # Node.js CLI + model data
+nix run .#test-e2e       # E2E tests
 ```
 
 ## License

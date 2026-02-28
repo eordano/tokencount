@@ -1,5 +1,3 @@
-// zbase32 encoding/decoding for URL sharing
-
 const ALPHABET = "ybndrfg8ejkmcpqxot1uwisza345h769";
 
 function zbase32Encode(bytes) {
@@ -7,7 +5,6 @@ function zbase32Encode(bytes) {
   for (const b of bytes) {
     bits += b.toString(2).padStart(8, "0");
   }
-  // Pad to multiple of 5
   while (bits.length % 5 !== 0) {
     bits += "0";
   }
@@ -33,6 +30,11 @@ function zbase32Decode(str) {
   return new Uint8Array(bytes);
 }
 
+function base64UrlEncode(bytes) {
+  const binStr = String.fromCodePoint(...bytes);
+  return btoa(binStr).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
 export function encodePayload(textA, textB, opts) {
   const obj = { a: textA, b: textB };
   if (opts) {
@@ -40,9 +42,8 @@ export function encodePayload(textA, textB, opts) {
     if (opts.highlight) obj.h = opts.highlight;
     if (opts.tokens) obj.t = opts.tokens;
   }
-  const payload = JSON.stringify(obj);
-  const bytes = new TextEncoder().encode(payload);
-  return zbase32Encode(bytes);
+  const bytes = new TextEncoder().encode(JSON.stringify(obj));
+  return base64UrlEncode(bytes);
 }
 
 export function decodePayload(encoded) {
@@ -60,40 +61,11 @@ export function decodePayload(encoded) {
   }
 }
 
-// ── Base64 / Base64url support ──────────────────────────────────────────
-// Accepts standard base64 (+/) and base64url (-_), with or without padding.
-// The web app reads the ?b= query param; the share button still uses ?d= (zbase32).
-//
-// Build a shareable URL from the command line:
-//   echo -n '{"a":"text one","b":"text two"}' | base64 | tr '+/' '-_' | tr -d '='
-//   # → append result to: https://yoursite.com/?b=
-//
-// Or with standard base64 (needs URL-encoding for +/=):
-//   echo -n '{"a":"text one","b":"text two"}' | base64
-//
-// Optional JSON fields: "m" (model name), "h" ("a","b","ab" for highlights).
-
 function base64Decode(encoded) {
   let b64 = encoded.replace(/-/g, "+").replace(/_/g, "/");
   while (b64.length % 4) b64 += "=";
   const binStr = atob(b64);
   return Uint8Array.from(binStr, (c) => c.codePointAt(0));
-}
-
-function base64UrlEncode(bytes) {
-  const binStr = String.fromCodePoint(...bytes);
-  return btoa(binStr).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-export function encodePayloadBase64(textA, textB, opts) {
-  const obj = { a: textA, b: textB };
-  if (opts) {
-    if (opts.model) obj.m = opts.model;
-    if (opts.highlight) obj.h = opts.highlight;
-    if (opts.tokens) obj.t = opts.tokens;
-  }
-  const bytes = new TextEncoder().encode(JSON.stringify(obj));
-  return base64UrlEncode(bytes);
 }
 
 export function decodePayloadBase64(encoded) {

@@ -37,6 +37,25 @@
         fi
       '';
 
+      packageJson = builtins.fromJSON (builtins.readFile ./package.json);
+      cargoToml = builtins.readFile ./Cargo.toml;
+      cargoVersion = let
+        m = builtins.match ".*\nversion = \"([^\"]+)\".*" cargoToml;
+      in builtins.head m;
+
+      npmBuild = { pkgs }: extra: pkgs.buildNpmPackage ({
+        version = packageJson.version;
+        src = self;
+        npmDepsHash = "sha256-OS2/ErvQBQrsHBfqevucFf9+eq1qbqriF946Zqi51h8=";
+        env = {
+          MODELS_DIR = hfModels { inherit pkgs; };
+          ESBUILD_BINARY_PATH = "${esbuild_0_27_3 { inherit pkgs; }}/bin/esbuild";
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = "1";
+        };
+        npmRebuildFlags = [ "--ignore-scripts" ];
+        dontNpmBuild = true;
+      } // extra);
+
       # esbuild 0.27.3 built from source (matches package-lock.json)
       esbuild_0_27_3 = { pkgs }: pkgs.buildGoModule rec {
         pname = "esbuild";
@@ -87,145 +106,143 @@
             cp ${m.src} $out/${m.repo}/${m.file}
           '') models)
         );
+      repoToDir = {
+        "Xenova/gemma-2-tokenizer"             = "gemini";
+        "deepseek-ai/DeepSeek-V3"              = "deepseek";
+        "Qwen/Qwen3-0.6B"                      = "qwen";
+        "MiniMaxAI/MiniMax-Text-01"             = "minimax";
+        "Xenova/llama4-tokenizer"               = "llama";
+        "mistralai/Mistral-Nemo-Instruct-2407"  = "mistral";
+        "Xenova/grok-1-tokenizer"               = "grok";
+      };
+
+      # Assembled model directory for the Rust CLI: o200k_base.tiktoken +
+      # {model}/tokenizer.json for each HF model.  Shared between the
+      # dev shell (TOKEN_COUNT_MODELS env) and the release package.
+      rustModelsDir = { pkgs }:
+        let
+          hfData = hfModels { inherit pkgs; };
+          o200kData = pkgs.fetchurl {
+            url = "https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken";
+            hash = "sha256-RGqVOMtsNI41FhINfAiwn1fDZJXirP/+WaW/iwz7Gi0=";
+          };
+          copyHfModels = builtins.concatStringsSep "\n" (
+            nixpkgs.lib.mapAttrsToList (repo: dir: ''
+              mkdir -p $out/${dir}
+              cp ${hfData}/${repo}/tokenizer.json $out/${dir}/
+            '') repoToDir
+          );
+        in
+        pkgs.runCommand "tokencount-rust-models" {} ''
+          mkdir -p $out
+          cp ${o200kData} $out/o200k_base.tiktoken
+          ${copyHfModels}
+        '';
     in
     {
       apps = forEachSystem ({ pkgs }: {
         default = {
           type = "app";
-          program = "${self.packages.${pkgs.stdenv.hostPlatform.system}.default}/bin/tokencount";
+          program = "${self.packages.${pkgs.stdenv.hostPlatform.system}.tokencount}/bin/tokencount";
         };
       });
 
       packages = forEachSystem ({ pkgs }:
         let isLinux = pkgs.stdenv.hostPlatform.isLinux; in
         {
-        default = self.packages.${pkgs.stdenv.hostPlatform.system}.build-cli;
-      } // nixpkgs.lib.optionalAttrs isLinux {
-        test-e2e = pkgs.writeShellApplication {
-          name = "test-e2e";
-          runtimeInputs = [ pkgs.nodejs pkgs.python3 pkgs.chromium ];
+        default = self.packages.${pkgs.stdenv.hostPlatform.system}.tokencount;
+      } // nixpkgs.lib.optionalAttrs isLinux (let
+        e2eInputs = [ pkgs.nodejs pkgs.python3 pkgs.chromium ];
+        e2eSetup = ''
+          export FONTCONFIG_FILE="${fontsConf { inherit pkgs; }}"
+          export BROWSER_PATH="${pkgs.chromium}/bin/chromium"
+          cd "$(git rev-parse --show-toplevel)"
+          ${ensureNodeModules}
+        '';
+        mkE2eTest = name: extra: pkgs.writeShellApplication {
+          inherit name;
+          runtimeInputs = e2eInputs;
           text = ''
-            export FONTCONFIG_FILE="${fontsConf { inherit pkgs; }}"
-            export BROWSER_PATH="${pkgs.chromium}/bin/chromium"
-
-            cd "$(git rev-parse --show-toplevel)"
-            ${ensureNodeModules}
-
-            npx playwright test "$@"
+            ${e2eSetup}
+            ${extra}
           '';
         };
-
-        test-e2e-bundle = pkgs.writeShellApplication {
-          name = "test-e2e-bundle";
-          runtimeInputs = [ pkgs.nodejs pkgs.python3 pkgs.chromium ];
-          text = ''
-            export FONTCONFIG_FILE="${fontsConf { inherit pkgs; }}"
-            export BROWSER_PATH="${pkgs.chromium}/bin/chromium"
-
-            cd "$(git rev-parse --show-toplevel)"
-            ${ensureNodeModules}
-
-            npm run build:offline
-            npx playwright test --config playwright.bundle.config.js "$@"
-          '';
-        };
-      } // {
-        build-cli = pkgs.buildNpmPackage {
-          pname = "tokencount";
-          version = "1.0.0";
-
-          src = self;
-          npmDepsHash = "sha256-lRek5RKHZt1PbGQ3wJwaBxNxb7wHrWqFpUT0qaDTryE=";
-
-          env = {
-            MODELS_DIR = hfModels { inherit pkgs; };
-            ESBUILD_BINARY_PATH = "${esbuild_0_27_3 { inherit pkgs; }}/bin/esbuild";
-            PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = "1";
-          };
-
-          npmRebuildFlags = [ "--ignore-scripts" ];
-
-          dontNpmBuild = true;
-
-          buildPhase = ''
-            runHook preBuild
-            node scripts/build-cli.mjs
-            runHook postBuild
-          '';
-
-          installPhase = let
-            # Map HF repo names to CLI model directory names
-            repoToDir = {
-              "Xenova/gemma-2-tokenizer"             = "gemini";
-              "deepseek-ai/DeepSeek-V3"              = "deepseek";
-              "Qwen/Qwen3-0.6B"                      = "qwen";
-              "MiniMaxAI/MiniMax-Text-01"             = "minimax";
-              "Xenova/llama4-tokenizer"               = "llama";
-              "mistralai/Mistral-Nemo-Instruct-2407"  = "mistral";
-              "Xenova/grok-1-tokenizer"               = "grok";
+      in {
+        test-e2e = mkE2eTest "test-e2e" ''npx playwright test "$@"'';
+        test-e2e-bundle = mkE2eTest "test-e2e-bundle" ''
+          npm run build:offline
+          npx playwright test --config playwright.bundle.config.js "$@"
+        '';
+      }) // {
+        tokencount = pkgs.pkgsStatic.rustPlatform.buildRustPackage {
+              pname = "tokencount";
+              version = cargoVersion;
+              src = pkgs.lib.cleanSourceWith {
+                src = self;
+                filter = path: type:
+                  let base = builtins.baseNameOf path; in
+                  base == "Cargo.toml" || base == "Cargo.lock" || base == "build.rs"
+                  || base == "src" || nixpkgs.lib.hasPrefix "${self}/src" (toString path)
+                  || base == "data" || nixpkgs.lib.hasPrefix "${self}/data" (toString path);
+              };
+              cargoLock.lockFile = ./Cargo.lock;
+              env.TOKEN_COUNT_MODELS = rustModelsDir { inherit pkgs; };
             };
+
+        tokencount-js = let
             hfData = hfModels { inherit pkgs; };
-            copyCommands = builtins.concatStringsSep "\n" (
+            copyModels = builtins.concatStringsSep "\n" (
               nixpkgs.lib.mapAttrsToList (repo: dir: ''
                 mkdir -p $out/share/tokencount/models/${dir}
                 cp ${hfData}/${repo}/tokenizer.json $out/share/tokencount/models/${dir}/
                 cp ${hfData}/${repo}/tokenizer_config.json $out/share/tokencount/models/${dir}/
               '') repoToDir
             );
-          in ''
-            runHook preInstall
-            mkdir -p $out/bin $out/share/tokencount/models
-            cp dist/tokencount.mjs $out/bin/tokencount
-            chmod +x $out/bin/tokencount
-            cp data/claude-vocab.json $out/share/tokencount/models/
-            ${copyCommands}
-            runHook postInstall
-          '';
-        };
-
-        build-offline = pkgs.buildNpmPackage {
-          pname = "tokencount-offline";
-          version = "1.0.0";
-
-          src = self;
-          npmDepsHash = "sha256-lRek5RKHZt1PbGQ3wJwaBxNxb7wHrWqFpUT0qaDTryE=";
-
-          env = {
-            MODELS_DIR = hfModels { inherit pkgs; };
-            ESBUILD_BINARY_PATH = "${esbuild_0_27_3 { inherit pkgs; }}/bin/esbuild";
-            PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = "1";
+          in npmBuild { inherit pkgs; } {
+            pname = "tokencount-js";
+            buildPhase = ''
+              runHook preBuild
+              node scripts/build-cli.mjs
+              runHook postBuild
+            '';
+            installPhase = ''
+              runHook preInstall
+              mkdir -p $out/bin $out/share/tokencount/models
+              cp dist/tokencount.mjs $out/bin/tokencount-js
+              chmod +x $out/bin/tokencount-js
+              cp package.json $out/
+              cp data/claude-vocab.json $out/share/tokencount/models/
+              ${copyModels}
+              runHook postInstall
+            '';
           };
 
-          # Skip install scripts during npm rebuild: onnxruntime-node tries to
-          # download a native binary (not needed — shimmed out by esbuild), and
-          # esbuild uses ESBUILD_BINARY_PATH instead of its npm postinstall.
-          npmRebuildFlags = [ "--ignore-scripts" ];
-
-          dontNpmBuild = true;
-
-          buildPhase = ''
-            runHook preBuild
-            node scripts/build-offline.mjs
-            runHook postBuild
-          '';
-
-          installPhase = ''
-            runHook preInstall
-            mkdir -p $out
-            cp dist/tokencount.html $out/
-            cp dist/tokencount-offline.tar.gz $out/
-            runHook postInstall
-          '';
-        };
+        build-offline = npmBuild { inherit pkgs; } {
+            pname = "tokencount-offline";
+            buildPhase = ''
+              runHook preBuild
+              node scripts/build-offline.mjs
+              runHook postBuild
+            '';
+            installPhase = ''
+              runHook preInstall
+              mkdir -p $out
+              cp dist/tokencount.html $out/
+              cp dist/tokencount-offline.tar.gz $out/
+              runHook postInstall
+            '';
+          };
       });
 
       devShells = forEachSystem ({ pkgs }:
         let isLinux = pkgs.stdenv.hostPlatform.isLinux; in
         {
         default = pkgs.mkShell {
-          packages = [ pkgs.nodejs pkgs.python3 ]
+          packages = [ pkgs.nodejs pkgs.python3 pkgs.cargo pkgs.rustc pkgs.hyperfine ]
             ++ nixpkgs.lib.optionals isLinux [ pkgs.chromium ];
-          env = nixpkgs.lib.optionalAttrs isLinux {
+          env = {
+            TOKEN_COUNT_MODELS = rustModelsDir { inherit pkgs; };
+          } // nixpkgs.lib.optionalAttrs isLinux {
             FONTCONFIG_FILE = fontsConf { inherit pkgs; };
             BROWSER_PATH = "${pkgs.chromium}/bin/chromium";
           };

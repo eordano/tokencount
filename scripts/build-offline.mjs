@@ -1,7 +1,4 @@
 #!/usr/bin/env node
-// Build a single self-contained HTML file that works from file:///
-// Usage: node scripts/build-offline.mjs
-
 import { execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -13,7 +10,6 @@ const ROOT = path.resolve(path.dirname(__filename), "..");
 const TMP = path.join(ROOT, ".bundle-tmp");
 const DIST = path.join(ROOT, "dist");
 
-// HuggingFace repos to embed (must match MODEL_PROFILES in tokenizer.js)
 const HF_REPOS = [
   "Xenova/gemma-2-tokenizer",
   "deepseek-ai/DeepSeek-V3",
@@ -25,7 +21,6 @@ const HF_REPOS = [
 ];
 const HF_FILES = ["tokenizer.json", "tokenizer_config.json"];
 
-// esbuild plugin: shim out onnxruntime-* and sharp (not needed for tokenizer-only)
 const onnxShimPlugin = {
   name: "shims",
   setup(build) {
@@ -44,23 +39,18 @@ const onnxShimPlugin = {
   },
 };
 
-// ── Step 1: Copy source to temp dir and patch tokenizer.js ──────────────
-
 function patchSource() {
   console.log("[1/6] Patching source for offline bundling...");
 
-  // Clean and recreate temp dir
   if (fs.existsSync(TMP)) fs.rmSync(TMP, { recursive: true });
   fs.mkdirSync(path.join(TMP, "js"), { recursive: true });
 
-  // Copy all JS source files
   for (const file of fs.readdirSync(path.join(ROOT, "js"))) {
     fs.copyFileSync(path.join(ROOT, "js", file), path.join(TMP, "js", file));
   }
 
   let src = fs.readFileSync(path.join(TMP, "js", "tokenizer.js"), "utf8");
 
-  // Patch A: Add static imports after the existing import line
   const existingImport = 'import { loadClaudeTokenizer, getClaudeTokenizer } from "./claude-tokenizer.js";';
   src = src.replace(
     existingImport,
@@ -69,7 +59,6 @@ import { encode as __gptEncode, decode as __gptDecode } from "gpt-tokenizer/enco
 import { AutoTokenizer as __HfAutoTokenizer, env as __hfEnv } from "@huggingface/transformers";`
   );
 
-  // Patch B: Replace loadHfLibrary() body
   src = src.replace(
     /function loadHfLibrary\(\) \{[\s\S]*?^}/m,
     `function loadHfLibrary() {
@@ -82,7 +71,6 @@ import { AutoTokenizer as __HfAutoTokenizer, env as __hfEnv } from "@huggingface
 }`
   );
 
-  // Patch C: Replace the GPT dynamic import block in loadModel()
   src = src.replace(
     /if \(profile\.type === "gpt"\) \{\s*promise = import\("https:\/\/esm\.sh\/gpt-tokenizer@[\d.]+\/encoding\/o200k_base"\)\s*\.then\(\(mod\) => \{\s*gptEncode = mod\.encode;\s*gptDecode = mod\.decode;\s*status\[name\] = "ready";\s*\}\)/,
     `if (profile.type === "gpt") {
@@ -93,7 +81,6 @@ import { AutoTokenizer as __HfAutoTokenizer, env as __hfEnv } from "@huggingface
     })`
   );
 
-  // Patch D: Replace import.meta.url vocab URL
   src = src.replace(
     'const vocabUrl = new URL("../data/claude-vocab.json", import.meta.url).href;',
     'const vocabUrl = "https://offline.invalid/data/claude-vocab.json";'
@@ -101,8 +88,6 @@ import { AutoTokenizer as __HfAutoTokenizer, env as __hfEnv } from "@huggingface
 
   fs.writeFileSync(path.join(TMP, "js", "tokenizer.js"), src);
 }
-
-// ── Step 2: Bundle with esbuild ─────────────────────────────────────────
 
 async function bundle() {
   console.log("[2/6] Bundling with esbuild...");
@@ -123,8 +108,6 @@ async function bundle() {
     plugins: [onnxShimPlugin],
   });
 }
-
-// ── Step 3: Download model data ─────────────────────────────────────────
 
 async function downloadModels() {
   console.log("[3/6] Downloading tokenizer model data...");
@@ -157,7 +140,6 @@ async function downloadModels() {
     }
   }
 
-  // Claude vocab from local source
   const claudeVocab = JSON.parse(
     fs.readFileSync(path.join(ROOT, "data", "claude-vocab.json"), "utf8")
   );
@@ -165,12 +147,9 @@ async function downloadModels() {
   return { models, claudeVocab };
 }
 
-// ── Step 4: Generate fetch interceptor ──────────────────────────────────
-
 function generateInterceptor(models, claudeVocab) {
   console.log("[4/6] Generating fetch interceptor...");
 
-  // Serialize model data as JSON (keys are repo names)
   const modelsJson = JSON.stringify(models);
   const vocabJson = JSON.stringify(claudeVocab);
 
@@ -180,7 +159,6 @@ var CLAUDE_VOCAB=${vocabJson};
 var _origFetch=window.fetch;
 window.fetch=function(input,init){
   var url=(typeof input==="string")?input:(input instanceof Request)?input.url:String(input);
-  // Match HuggingFace model files
   for(var repo in MODELS){
     for(var file in MODELS[repo]){
       if(url.indexOf(repo)!==-1&&url.indexOf(file)!==-1){
@@ -189,7 +167,6 @@ window.fetch=function(input,init){
       }
     }
   }
-  // Match Claude vocab
   if(url.indexOf("claude-vocab")!==-1){
     var body=JSON.stringify(CLAUDE_VOCAB);
     return Promise.resolve(new Response(body,{status:200,headers:{"Content-Type":"application/json"}}));
@@ -198,8 +175,6 @@ window.fetch=function(input,init){
 };
 })();`;
 }
-
-// ── Step 5: Assemble single HTML file ───────────────────────────────────
 
 function assembleHtml(interceptorJs) {
   console.log("[5/6] Assembling single HTML file...");
@@ -210,20 +185,14 @@ function assembleHtml(interceptorJs) {
 
   let out = html;
 
-  // Replace CSS link with inline style
   out = out.replace(
     /<link rel="stylesheet" href="css\/style\.css">/,
     `<style>\n${css}\n</style>`
   );
 
-  // Escape "</script" sequences in inline JS so the HTML parser doesn't
-  // prematurely close the <script> tag (tokenizer vocab JSON contains HTML tokens).
   const safeInterceptor = interceptorJs.replaceAll("</script", "<\\/script");
   const safeBundle = bundleJs.replaceAll("</script", "<\\/script");
 
-  // Replace module script with interceptor + bundle.
-  // Use a function replacement to avoid $-pattern expansion in the
-  // replacement string (minified JS contains $' $` etc.).
   out = out.replace(
     /<script type="module" src="js\/app\.js"><\/script>/,
     () => `<script>${safeInterceptor}</script>\n<script>${safeBundle}</script>`
@@ -236,23 +205,18 @@ function assembleHtml(interceptorJs) {
   console.log(`  Output: ${outPath} (${sizeMB} MB)`);
 }
 
-// ── Step 6: Create tar.gz ───────────────────────────────────────────────
-
 function createArchive() {
   console.log("[6/6] Creating tar.gz archive...");
   execSync(
     `tar -czf tokencount-offline.tar.gz -C dist tokencount.html`,
     { cwd: ROOT }
   );
-  // Move into dist/
   fs.renameSync(
     path.join(ROOT, "tokencount-offline.tar.gz"),
     path.join(DIST, "tokencount-offline.tar.gz")
   );
   console.log("  Archive: dist/tokencount-offline.tar.gz");
 }
-
-// ── Main ────────────────────────────────────────────────────────────────
 
 async function main() {
   console.log("Building offline bundle...\n");
@@ -264,7 +228,6 @@ async function main() {
   assembleHtml(interceptorJs);
   createArchive();
 
-  // Clean up temp dir
   fs.rmSync(TMP, { recursive: true });
 
   console.log("\nDone! Open dist/tokencount.html in a browser (file:/// works).");
@@ -272,7 +235,6 @@ async function main() {
 
 main().catch((err) => {
   console.error("Build failed:", err);
-  // Clean up temp dir on failure
   if (fs.existsSync(TMP)) fs.rmSync(TMP, { recursive: true });
   process.exit(1);
 });

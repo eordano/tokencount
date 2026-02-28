@@ -7,3 +7,5 @@ dist/
 *.tar.gz
 .bundle-tmp/
 result
+target/
+models/

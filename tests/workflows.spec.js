@@ -12,7 +12,6 @@ const CODE_TEXT = `function fibonacci(n) {\n  if (n <= 1) return n;\n  return fi
 
 let shotIndex = 0;
 
-/** Take a named screenshot, prefixed with project name + auto-index. */
 async function snap(page, name, testInfo) {
   const project = testInfo.project.name;
   const prefix = String(shotIndex++).padStart(3, "0");
@@ -26,12 +25,31 @@ function isMobile(testInfo) {
   return testInfo.project.name === "mobile";
 }
 
-/**
- * In compare mode on mobile, panel B is shown by default (Modified tab active).
- * This helper ensures we're on tab B before filling textarea-b.
- */
-async function fillTextareaBInCompareMode(page, text, testInfo) {
+async function fillA(page, text, ms = 300) {
+  await page.locator("#textarea-a").fill(text);
+  await page.waitForTimeout(ms);
+}
+
+async function fillB(page, text, ms = 500) {
   await page.locator("#textarea-b").fill(text);
+  await page.waitForTimeout(ms);
+}
+
+async function compare(page, ms = 300) {
+  await page.locator("#compare-btn").click();
+  await page.waitForTimeout(ms);
+}
+
+async function setupDiff(page, textA, textB) {
+  await fillA(page, textA, 200);
+  await compare(page, 200);
+  await fillB(page, textB);
+}
+
+function toBase64(obj, urlSafe = false) {
+  const bytes = new TextEncoder().encode(JSON.stringify(obj));
+  const s = btoa(Array.from(bytes, (b) => String.fromCharCode(b)).join(""));
+  return urlSafe ? s.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "") : s;
 }
 
 test.beforeAll(async ({}, testInfo) => {
@@ -46,15 +64,11 @@ test.beforeEach(async ({ page }) => {
   await page.waitForSelector("#textarea-a");
 });
 
-// ─────────────────────────────────────────────
-// 1. Single text token counting
-// ─────────────────────────────────────────────
 test.describe("Single text token counting", () => {
   test("paste text and see token count immediately", async ({ page }, testInfo) => {
     await snap(page, "01-empty-state", testInfo);
 
-    await page.locator("#textarea-a").fill(SAMPLE_TEXT_A);
-    await page.waitForTimeout(500);
+    await fillA(page, SAMPLE_TEXT_A, 500);
     await snap(page, "01-text-pasted", testInfo);
 
     await expect(page.locator("#tokencount-a")).not.toHaveText("0 tok");
@@ -64,8 +78,7 @@ test.describe("Single text token counting", () => {
   });
 
   test("token visualization is active by default", async ({ page }, testInfo) => {
-    await page.locator("#textarea-a").fill(SAMPLE_TEXT_A);
-    await page.waitForTimeout(500);
+    await fillA(page, SAMPLE_TEXT_A, 500);
     await snap(page, "01-highlight-default-on", testInfo);
 
     await expect(page.locator("#token-view-btn-a")).toHaveClass(/active/);
@@ -79,28 +92,21 @@ test.describe("Single text token counting", () => {
   });
 });
 
-// ─────────────────────────────────────────────
-// 2. Edit and compare token diff
-// ─────────────────────────────────────────────
 test.describe("Edit and compare token diff", () => {
   test("enter compare mode and see diff", async ({ page }, testInfo) => {
-    await page.locator("#textarea-a").fill(SAMPLE_TEXT_A);
-    await page.waitForTimeout(300);
+    await fillA(page, SAMPLE_TEXT_A);
     await snap(page, "02-before-compare", testInfo);
 
-    await page.locator("#compare-btn").click();
-    await page.waitForTimeout(300);
+    await compare(page);
     await snap(page, "02-compare-mode-entered", testInfo);
 
     await expect(page.locator("#diff-summary")).toBeVisible();
 
-    await fillTextareaBInCompareMode(page, SAMPLE_TEXT_B, testInfo);
-    await page.waitForTimeout(500);
+    await fillB(page, SAMPLE_TEXT_B);
     await snap(page, "02-after-edit-b", testInfo);
 
     const heroNumber = page.locator("#diff-hero-number");
     await expect(heroNumber).toBeVisible();
-    // Hero shows +N, -N, ~+N, ~-N, or = (when counts are equal)
     expect(await heroNumber.textContent()).toMatch(/^[+\-=~]/);
 
     await expect(page.locator("#diff-card")).toBeVisible();
@@ -108,11 +114,9 @@ test.describe("Edit and compare token diff", () => {
   });
 
   test("exit compare mode returns to single panel", async ({ page }, testInfo) => {
-    await page.locator("#textarea-a").fill(SAMPLE_TEXT_A);
-    await page.locator("#compare-btn").click();
-    await page.waitForTimeout(300);
+    await fillA(page, SAMPLE_TEXT_A);
+    await compare(page);
 
-    // On mobile, close button is in panel B header; switch to tab B first
     if (isMobile(testInfo)) {
       await page.locator('.mobile-tab[data-tab="b"]').click();
       await page.waitForTimeout(200);
@@ -123,23 +127,13 @@ test.describe("Edit and compare token diff", () => {
     await snap(page, "02-exited-compare", testInfo);
 
     await expect(page.locator("#panel-b")).not.toBeVisible();
-    // Diff summary stays visible in single-panel mode (shows token count + model picker)
     await expect(page.locator("#diff-summary")).toBeVisible();
   });
 });
 
-// ─────────────────────────────────────────────
-// 3. Pure diff viewing
-// ─────────────────────────────────────────────
 test.describe("Pure diff viewing", () => {
   test("paste two different texts and see word-level diff", async ({ page }, testInfo) => {
-    await page.locator("#textarea-a").fill(SAMPLE_TEXT_A);
-    await page.waitForTimeout(200);
-    await page.locator("#compare-btn").click();
-    await page.waitForTimeout(200);
-
-    await fillTextareaBInCompareMode(page, SAMPLE_TEXT_B, testInfo);
-    await page.waitForTimeout(500);
+    await setupDiff(page, SAMPLE_TEXT_A, SAMPLE_TEXT_B);
     await snap(page, "03-two-texts-diffed", testInfo);
 
     const diffBody = page.locator("#diff-body");
@@ -150,18 +144,13 @@ test.describe("Pure diff viewing", () => {
   });
 });
 
-// ─────────────────────────────────────────────
-// 4. Model switching — desktop custom dropdown
-// ─────────────────────────────────────────────
 test.describe("Model switching (desktop dropdown)", () => {
   test("switch model via custom dropdown", async ({ page }, testInfo) => {
     test.skip(isMobile(testInfo), "Custom dropdown hidden on mobile");
 
-    await page.locator("#textarea-a").fill(SAMPLE_TEXT_A);
-    await page.waitForTimeout(300);
+    await fillA(page, SAMPLE_TEXT_A);
     await snap(page, "04-before-model-switch", testInfo);
 
-    // Model selector is in diff summary strip
     await page.locator("#model-selector-a").click();
     await page.waitForTimeout(200);
     await snap(page, "04-dropdown-open", testInfo);
@@ -181,8 +170,7 @@ test.describe("Model switching (desktop dropdown)", () => {
   test("dropdown is not clipped by panel border", async ({ page }, testInfo) => {
     test.skip(isMobile(testInfo), "Custom dropdown hidden on mobile");
 
-    await page.locator("#textarea-a").fill(SAMPLE_TEXT_A);
-    await page.waitForTimeout(200);
+    await fillA(page, SAMPLE_TEXT_A, 200);
 
     await page.locator("#model-selector-a").click();
     await page.waitForTimeout(200);
@@ -195,16 +183,12 @@ test.describe("Model switching (desktop dropdown)", () => {
     expect(dropdownBox).not.toBeNull();
     expect(summaryBox).not.toBeNull();
     if (dropdownBox && summaryBox) {
-      // Dropdown should extend beyond the summary strip
       expect(dropdownBox.height).toBeGreaterThan(0);
     }
     await snap(page, "04-dropdown-not-clipped", testInfo);
   });
 });
 
-// ─────────────────────────────────────────────
-// 5. Token visualization
-// ─────────────────────────────────────────────
 test.describe("Token visualization", () => {
   test("token boundaries show while typing", async ({ page }, testInfo) => {
     const textarea = page.locator("#textarea-a");
@@ -219,8 +203,7 @@ test.describe("Token visualization", () => {
   });
 
   test("toggle highlight off and on", async ({ page }, testInfo) => {
-    await page.locator("#textarea-a").fill(SAMPLE_TEXT_A);
-    await page.waitForTimeout(500);
+    await fillA(page, SAMPLE_TEXT_A, 500);
     await snap(page, "05-highlight-on", testInfo);
 
     await page.locator("#token-view-btn-a").click();
@@ -263,15 +246,12 @@ test.describe("Token visualization", () => {
       "I can continue!",
     ].join("\n");
 
-    await page.locator("#textarea-a").fill(multiLineText);
-    await page.waitForTimeout(1500); // wait for debounce + tokenizer load
+    await fillA(page, multiLineText, 1500);
     await snap(page, "05-multiline-highlight", testInfo);
 
     const highlight = page.locator("#token-highlight-a");
     await expect(highlight).toBeVisible();
 
-    // The highlight text must match the textarea text exactly —
-    // no extra blank lines from replacement chars on multi-byte sequences
     const highlightText = await highlight.innerText();
     const inputLines = multiLineText.split("\n");
     const highlightLines = highlightText.split("\n");
@@ -283,17 +263,13 @@ test.describe("Token visualization", () => {
   });
 
   test("highlight persists in compare mode on both panels", async ({ page }, testInfo) => {
-    await page.locator("#textarea-a").fill(SAMPLE_TEXT_A);
-    await page.waitForTimeout(300);
-    await page.locator("#compare-btn").click();
-    await page.waitForTimeout(300);
+    await fillA(page, SAMPLE_TEXT_A);
+    await compare(page);
 
-    await fillTextareaBInCompareMode(page, SAMPLE_TEXT_B, testInfo);
-    await page.waitForTimeout(500);
+    await fillB(page, SAMPLE_TEXT_B);
     await snap(page, "05-compare-both-highlighted", testInfo);
 
     if (isMobile(testInfo)) {
-      // Currently on tab B after fillTextareaBInCompareMode
       await expect(page.locator("#textarea-b")).toHaveClass(/token-overlay-active/);
       await expect(page.locator("#token-highlight-b")).toBeVisible();
 
@@ -311,9 +287,6 @@ test.describe("Token visualization", () => {
   });
 });
 
-// ─────────────────────────────────────────────
-// 6. Real-time iteration
-// ─────────────────────────────────────────────
 test.describe("Real-time iteration", () => {
   test("token counts update on each keystroke", async ({ page }, testInfo) => {
     const textarea = page.locator("#textarea-a");
@@ -350,21 +323,15 @@ test.describe("Real-time iteration", () => {
   });
 });
 
-// ─────────────────────────────────────────────
-// 7. AI rewrite comparison
-// ─────────────────────────────────────────────
 test.describe("AI rewrite comparison", () => {
   test("compare original vs shorter rewrite shows token savings", async ({ page }, testInfo) => {
     const summary =
       "AI transforms software development. LLMs generate human language fluently. Token counting matters for API costs. Different tokenizers split text differently.";
 
-    await page.locator("#textarea-a").fill(LONG_TEXT);
-    await page.waitForTimeout(200);
-    await page.locator("#compare-btn").click();
-    await page.waitForTimeout(200);
+    await fillA(page, LONG_TEXT, 200);
+    await compare(page, 200);
 
-    await fillTextareaBInCompareMode(page, summary, testInfo);
-    await page.waitForTimeout(500);
+    await fillB(page, summary);
     await snap(page, "07-rewrite-comparison", testInfo);
 
     expect(await page.locator("#diff-hero-number").textContent()).toMatch(/^-/);
@@ -372,13 +339,9 @@ test.describe("AI rewrite comparison", () => {
   });
 });
 
-// ─────────────────────────────────────────────
-// 8. Token boundary understanding
-// ─────────────────────────────────────────────
 test.describe("Token boundary understanding", () => {
   test("code text shows token boundaries", async ({ page }, testInfo) => {
-    await page.locator("#textarea-a").fill(CODE_TEXT);
-    await page.waitForTimeout(500);
+    await fillA(page, CODE_TEXT, 500);
     await snap(page, "08-code-tokenized", testInfo);
 
     const highlight = page.locator("#token-highlight-a");
@@ -387,34 +350,27 @@ test.describe("Token boundary understanding", () => {
   });
 
   test("CJK text tokenization", async ({ page }, testInfo) => {
-    await page.locator("#textarea-a").fill(CJK_TEXT);
-    await page.waitForTimeout(500);
+    await fillA(page, CJK_TEXT, 500);
     await snap(page, "08-cjk-tokenized", testInfo);
 
     await expect(page.locator("#tokencount-a")).not.toHaveText("0 tok");
   });
 });
 
-// ─────────────────────────────────────────────
-// 9. Mobile tabs — mobile only
-// ─────────────────────────────────────────────
 test.describe("Mobile tabs", () => {
   test("mobile tabs appear in compare mode and switch panels", async ({ page }, testInfo) => {
     test.skip(!isMobile(testInfo), "Mobile-only test");
 
     await snap(page, "09-mobile-empty", testInfo);
 
-    await page.locator("#textarea-a").fill(SAMPLE_TEXT_A);
-    await page.waitForTimeout(200);
-    await page.locator("#compare-btn").click();
-    await page.waitForTimeout(300);
+    await fillA(page, SAMPLE_TEXT_A, 200);
+    await compare(page);
     await snap(page, "09-mobile-compare-mode", testInfo);
 
     await expect(page.locator("#mobile-tabs")).toBeVisible();
 
     const tabA = page.locator('.mobile-tab[data-tab="a"]');
     const tabB = page.locator('.mobile-tab[data-tab="b"]');
-    // Compare mode defaults to Modified (tab B) on mobile
     await expect(tabB).toHaveClass(/active/);
     await expect(page.locator("#panel-a")).toHaveClass(/mobile-hidden/);
     await expect(page.locator("#panel-b")).not.toHaveClass(/mobile-hidden/);
@@ -431,15 +387,12 @@ test.describe("Mobile tabs", () => {
   test("token visualization persists when switching tabs", async ({ page }, testInfo) => {
     test.skip(!isMobile(testInfo), "Mobile-only test");
 
-    await page.locator("#textarea-a").fill(SAMPLE_TEXT_A);
-    await page.waitForTimeout(200);
-    await page.locator("#compare-btn").click();
-    await page.waitForTimeout(200);
+    await fillA(page, SAMPLE_TEXT_A, 200);
+    await compare(page, 200);
 
     await page.locator('.mobile-tab[data-tab="b"]').click();
     await page.waitForTimeout(200);
-    await page.locator("#textarea-b").fill(SAMPLE_TEXT_B);
-    await page.waitForTimeout(500);
+    await fillB(page, SAMPLE_TEXT_B);
     await snap(page, "09-mobile-highlights-tab-b", testInfo);
 
     await expect(page.locator("#token-view-btn-b")).toHaveClass(/active/);
@@ -454,18 +407,13 @@ test.describe("Mobile tabs", () => {
   });
 });
 
-// ─────────────────────────────────────────────
-// 10. Mobile native model selector — mobile only
-// ─────────────────────────────────────────────
 test.describe("Mobile native model selector", () => {
   test("native select visible on mobile, custom dropdown hidden", async ({ page }, testInfo) => {
     test.skip(!isMobile(testInfo), "Mobile-only test");
 
-    await page.locator("#textarea-a").fill(SAMPLE_TEXT_A);
-    await page.waitForTimeout(300);
+    await fillA(page, SAMPLE_TEXT_A);
     await snap(page, "10-mobile-model-selector", testInfo);
 
-    // Model selector is in diff summary strip on mobile
     await expect(page.locator("#model-select-native-compare")).toBeVisible();
     await expect(page.locator("#model-selector-a")).not.toBeVisible();
   });
@@ -473,8 +421,7 @@ test.describe("Mobile native model selector", () => {
   test("changing native select updates model", async ({ page }, testInfo) => {
     test.skip(!isMobile(testInfo), "Mobile-only test");
 
-    await page.locator("#textarea-a").fill(SAMPLE_TEXT_A);
-    await page.waitForTimeout(300);
+    await fillA(page, SAMPLE_TEXT_A);
     await snap(page, "10-mobile-before-model-change", testInfo);
 
     await page.locator("#model-select-native-compare").selectOption("openai");
@@ -487,15 +434,12 @@ test.describe("Mobile native model selector", () => {
   test("native select in compare mode diff summary", async ({ page }, testInfo) => {
     test.skip(!isMobile(testInfo), "Mobile-only test");
 
-    await page.locator("#textarea-a").fill(SAMPLE_TEXT_A);
-    await page.waitForTimeout(200);
-    await page.locator("#compare-btn").click();
-    await page.waitForTimeout(200);
+    await fillA(page, SAMPLE_TEXT_A, 200);
+    await compare(page, 200);
 
     await page.locator('.mobile-tab[data-tab="b"]').click();
     await page.waitForTimeout(200);
-    await page.locator("#textarea-b").fill(SAMPLE_TEXT_B);
-    await page.waitForTimeout(300);
+    await fillB(page, SAMPLE_TEXT_B, 300);
     await snap(page, "10-mobile-compare-native-select", testInfo);
 
     const compareSelect = page.locator("#model-select-native-compare");
@@ -509,35 +453,20 @@ test.describe("Mobile native model selector", () => {
   });
 });
 
-// ─────────────────────────────────────────────
-// 11. Share workflow
-// ─────────────────────────────────────────────
 test.describe("Share workflow", () => {
   test("share button generates URL with state", async ({ page }, testInfo) => {
-    await page.locator("#textarea-a").fill(SAMPLE_TEXT_A);
-    await page.waitForTimeout(200);
-    await page.locator("#compare-btn").click();
-    await page.waitForTimeout(200);
-
-    await fillTextareaBInCompareMode(page, SAMPLE_TEXT_B, testInfo);
-    await page.waitForTimeout(300);
+    await setupDiff(page, SAMPLE_TEXT_A, SAMPLE_TEXT_B);
     await snap(page, "11-before-share", testInfo);
 
     await page.locator("#share-btn").click();
     await page.waitForTimeout(500);
     await snap(page, "11-after-share", testInfo);
 
-    expect(page.url()).toContain("?d=");
+    expect(page.url()).toContain("?b=");
   });
 
   test("loading a share URL restores state", async ({ page }, testInfo) => {
-    await page.locator("#textarea-a").fill(SAMPLE_TEXT_A);
-    await page.waitForTimeout(200);
-    await page.locator("#compare-btn").click();
-    await page.waitForTimeout(200);
-
-    await fillTextareaBInCompareMode(page, SAMPLE_TEXT_B, testInfo);
-    await page.waitForTimeout(300);
+    await setupDiff(page, SAMPLE_TEXT_A, SAMPLE_TEXT_B);
     await page.locator("#share-btn").click();
     await page.waitForTimeout(300);
 
@@ -553,16 +482,9 @@ test.describe("Share workflow", () => {
   });
 });
 
-// ─────────────────────────────────────────────
-// 11b. Base64 URL sharing
-// ─────────────────────────────────────────────
 test.describe("Base64 URL sharing", () => {
   test("loading a base64url-encoded ?b= URL restores state", async ({ page }, testInfo) => {
-    const payload = JSON.stringify({ a: SAMPLE_TEXT_A, b: SAMPLE_TEXT_B });
-    const bytes = new TextEncoder().encode(payload);
-    const binStr = Array.from(bytes, (b) => String.fromCharCode(b)).join("");
-    const b64 = btoa(binStr).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-
+    const b64 = toBase64({ a: SAMPLE_TEXT_A, b: SAMPLE_TEXT_B }, true);
     await page.goto(`/?b=${b64}`);
     await page.waitForSelector("#textarea-a");
     await page.waitForTimeout(500);
@@ -574,11 +496,7 @@ test.describe("Base64 URL sharing", () => {
   });
 
   test("loading a standard base64 ?b= URL (with +/=) restores state", async ({ page }, testInfo) => {
-    const payload = JSON.stringify({ a: SAMPLE_TEXT_A, b: SAMPLE_TEXT_B });
-    const bytes = new TextEncoder().encode(payload);
-    const binStr = Array.from(bytes, (b) => String.fromCharCode(b)).join("");
-    const b64 = btoa(binStr); // standard base64 with + / =
-
+    const b64 = toBase64({ a: SAMPLE_TEXT_A, b: SAMPLE_TEXT_B });
     await page.goto(`/?b=${encodeURIComponent(b64)}`);
     await page.waitForSelector("#textarea-a");
     await page.waitForTimeout(500);
@@ -589,11 +507,7 @@ test.describe("Base64 URL sharing", () => {
   });
 
   test("base64 URL with model and highlight state", async ({ page }, testInfo) => {
-    const payload = JSON.stringify({ a: SAMPLE_TEXT_A, b: SAMPLE_TEXT_B, m: "openai", h: "ab" });
-    const bytes = new TextEncoder().encode(payload);
-    const binStr = Array.from(bytes, (b) => String.fromCharCode(b)).join("");
-    const b64 = btoa(binStr).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-
+    const b64 = toBase64({ a: SAMPLE_TEXT_A, b: SAMPLE_TEXT_B, m: "openai", h: "ab" }, true);
     await page.goto(`/?b=${b64}`);
     await page.waitForSelector("#textarea-a");
     await page.waitForTimeout(500);
@@ -604,29 +518,20 @@ test.describe("Base64 URL sharing", () => {
     await expect(page.locator("#diff-summary")).toBeVisible();
   });
 
-  test("?d= (zbase32) takes precedence when both params present", async ({ page }, testInfo) => {
-    // Build a zbase32 URL via the share button
-    await page.locator("#textarea-a").fill(SAMPLE_TEXT_A);
-    await page.waitForTimeout(200);
-    await page.locator("#compare-btn").click();
-    await page.waitForTimeout(200);
-    await fillTextareaBInCompareMode(page, SAMPLE_TEXT_B, testInfo);
-    await page.waitForTimeout(300);
-    await page.locator("#share-btn").click();
-    await page.waitForTimeout(300);
+  test("?d= (zbase32) still works for backward compatibility", async ({ page }, testInfo) => {
+    const zb32 = await page.evaluate(({ a, b }) => {
+      const ALPHABET = "ybndrfg8ejkmcpqxot1uwisza345h769";
+      const bytes = new TextEncoder().encode(JSON.stringify({ a, b }));
+      let bits = "";
+      for (const byte of bytes) bits += byte.toString(2).padStart(8, "0");
+      while (bits.length % 5 !== 0) bits += "0";
+      let result = "";
+      for (let i = 0; i < bits.length; i += 5) result += ALPHABET[parseInt(bits.slice(i, i + 5), 2)];
+      return result;
+    }, { a: SAMPLE_TEXT_A, b: SAMPLE_TEXT_B });
 
-    const shareUrl = new URL(page.url());
-    const zb32Param = shareUrl.searchParams.get("d");
-
-    // Build a base64 URL with different text
-    const wrongPayload = JSON.stringify({ a: "wrong", b: "data" });
-    const bytes = new TextEncoder().encode(wrongPayload);
-    const binStr = Array.from(bytes, (b) => String.fromCharCode(b)).join("");
-    const wrongB64 = btoa(binStr).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-
-    // Load with both params — zbase32 should win
     await page.evaluate(() => localStorage.clear());
-    await page.goto(`/?d=${zb32Param}&b=${wrongB64}`);
+    await page.goto(`/?d=${zb32}`);
     await page.waitForSelector("#textarea-a");
     await page.waitForTimeout(500);
 
@@ -635,18 +540,12 @@ test.describe("Base64 URL sharing", () => {
   });
 });
 
-// ─────────────────────────────────────────────
-// 12. Cross-language tokenization
-// ─────────────────────────────────────────────
 test.describe("Cross-language tokenization", () => {
   test("English vs CJK shows different token counts", async ({ page }, testInfo) => {
-    await page.locator("#textarea-a").fill("Large language models are changing how we build software.");
-    await page.waitForTimeout(200);
-    await page.locator("#compare-btn").click();
-    await page.waitForTimeout(200);
+    await fillA(page, "Large language models are changing how we build software.", 200);
+    await compare(page, 200);
 
-    await fillTextareaBInCompareMode(page, CJK_TEXT, testInfo);
-    await page.waitForTimeout(500);
+    await fillB(page, CJK_TEXT);
     await snap(page, "12-cross-language-diff", testInfo);
 
     await expect(page.locator("#tokencount-a")).not.toHaveText("0 tok");
@@ -657,9 +556,6 @@ test.describe("Cross-language tokenization", () => {
   });
 });
 
-// ─────────────────────────────────────────────
-// 13. Full desktop workflow — desktop only
-// ─────────────────────────────────────────────
 test.describe("Full desktop workflow", () => {
   test("complete workflow: paste → visualize → compare → switch model → share", async ({
     page,
@@ -668,20 +564,17 @@ test.describe("Full desktop workflow", () => {
 
     await snap(page, "13-step1-empty", testInfo);
 
-    await page.locator("#textarea-a").fill(LONG_TEXT);
-    await page.waitForTimeout(500);
+    await fillA(page, LONG_TEXT, 500);
     await snap(page, "13-step2-text-pasted", testInfo);
 
     await expect(page.locator("#token-highlight-a")).toBeVisible();
     await expect(page.locator("#textarea-a")).toHaveClass(/token-overlay-active/);
     await snap(page, "13-step3-highlight-auto", testInfo);
 
-    await page.locator("#compare-btn").click();
-    await page.waitForTimeout(500);
+    await compare(page, 500);
     await snap(page, "13-step4-compare-mode", testInfo);
 
-    await page.locator("#textarea-b").fill(SAMPLE_TEXT_B);
-    await page.waitForTimeout(500);
+    await fillB(page, SAMPLE_TEXT_B);
     await snap(page, "13-step5-edited-b", testInfo);
 
     await page.locator("#model-selector-a").click();
@@ -702,6 +595,6 @@ test.describe("Full desktop workflow", () => {
     await page.waitForTimeout(300);
     await snap(page, "13-step7-shared", testInfo);
 
-    expect(page.url()).toContain("?d=");
+    expect(page.url()).toContain("?b=");
   });
 });

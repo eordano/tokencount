@@ -1,8 +1,3 @@
-// Real tokenization using CDN-loaded tokenizer libraries
-// openai: gpt-tokenizer (pure JS, o200k_base encoding)
-// claude: ctoc trie-based tokenizer (rohangpta/ctoc, ~96% accurate)
-// Others (Gemini, DeepSeek, Qwen, Llama, Mistral, Grok, MiniMax): @huggingface/transformers AutoTokenizer
-
 import { loadClaudeTokenizer, getClaudeTokenizer } from "./claude-tokenizer.js";
 
 export const MODEL_PROFILES = [
@@ -17,14 +12,13 @@ export const MODEL_PROFILES = [
   { name: "grok",     displayName: "Grok",     label: "Grok (1 and 2, 3 and 4 unknown)",              color: "#E63946", type: "hf", hfRepo: "Xenova/grok-1-tokenizer" },
 ];
 
-// State — all mutable tokenizer state lives here
 const state = {
   status: Object.fromEntries(MODEL_PROFILES.map((p) => [p.name, "pending"])),
-  promises: {},       // name → load promise
-  gpt: null,          // { encode, decode } once loaded
-  hf: {},             // name → HF tokenizer instance
-  hfLib: null,        // AutoTokenizer class (shared)
-  hfLibPromise: null, // loading promise for the HF library
+  promises: {},
+  gpt: null,
+  hf: {},
+  hfLib: null,
+  hfLibPromise: null,
 };
 
 export function getStatus(name) {
@@ -35,7 +29,6 @@ export function isReady(name) {
   return state.status[name] === "ready";
 }
 
-// Count tokens using real tokenizer, or fallback to heuristic
 export function countTokens(text, name) {
   if (!text || text.trim().length === 0) return 0;
 
@@ -61,7 +54,6 @@ export function countTokens(text, name) {
   return fallbackEstimate(text, name);
 }
 
-// Count tokens for all models
 export function countAllTokenizers(text) {
   return MODEL_PROFILES.map((p) => ({
     name: p.name,
@@ -74,7 +66,6 @@ export function countAllTokenizers(text) {
   }));
 }
 
-// Progressively decode token IDs into an array of token strings
 function decodeProgressive(ids, decodeFn) {
   const tokens = [];
   let prev = 0;
@@ -86,7 +77,6 @@ function decodeProgressive(ids, decodeFn) {
   return tokens;
 }
 
-// Encode text into an array of token strings for visualization
 export function encodeTokens(text, name) {
   if (!text || text.length === 0) return null;
 
@@ -114,7 +104,6 @@ export function encodeTokens(text, name) {
   return null;
 }
 
-// Load HuggingFace transformers library (shared, loaded once)
 function loadHfLibrary() {
   if (state.hfLib) return Promise.resolve(state.hfLib);
   if (state.hfLibPromise) return state.hfLibPromise;
@@ -131,7 +120,6 @@ function loadHfLibrary() {
   return state.hfLibPromise;
 }
 
-// Lazy-load a single model by name. Returns a promise that resolves when ready.
 export function loadModel(name, onReady) {
   if (state.status[name] === "ready" || state.status[name] === "error") {
     return Promise.resolve();
@@ -183,7 +171,6 @@ export function loadModel(name, onReady) {
   return state.promises[name];
 }
 
-// Heuristic fallback (used while tokenizers are loading or on error)
 const FALLBACK = {
   openai:   { eng: 4.0, cjk: 1.5 },
   claude:   { eng: 3.7, cjk: 1.4 },

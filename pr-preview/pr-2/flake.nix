@@ -46,7 +46,7 @@
       npmBuild = { pkgs }: extra: pkgs.buildNpmPackage ({
         version = packageJson.version;
         src = self;
-        npmDepsHash = "sha256-lRek5RKHZt1PbGQ3wJwaBxNxb7wHrWqFpUT0qaDTryE=";
+        npmDepsHash = "sha256-OS2/ErvQBQrsHBfqevucFf9+eq1qbqriF946Zqi51h8=";
         env = {
           MODELS_DIR = hfModels { inherit pkgs; };
           ESBUILD_BINARY_PATH = "${esbuild_0_27_3 { inherit pkgs; }}/bin/esbuild";
@@ -210,6 +210,7 @@
               mkdir -p $out/bin $out/share/tokencount/models
               cp dist/tokencount.mjs $out/bin/tokencount-js
               chmod +x $out/bin/tokencount-js
+              cp package.json $out/
               cp data/claude-vocab.json $out/share/tokencount/models/
               ${copyModels}
               runHook postInstall

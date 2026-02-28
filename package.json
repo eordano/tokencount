@@ -1,6 +1,6 @@
 {
   "name": "tokencount",
-  "version": "0.99.0",
+  "version": "1.0.1",
   "description": "Side-by-side text diff with token counts across 9 LLM tokenizers",
   "main": "index.js",
   "bin": {

@@ -8,13 +8,18 @@ const TERM_BIT: u32 = 0x8000_0000;
 const FNV_OFFSET: u64 = 0xcbf29ce484222325;
 const FNV_PRIME: u64 = 0x100000001b3;
 
+/// FNV-1a hash, forced to odd (never zero).
+///
+/// The frozen hash tables use `slot_hash == 0` as the empty-slot sentinel
+/// for linear-probe termination. `h | 1` guarantees a populated slot can
+/// never be mistaken for an empty one.
 fn fnv_hash(data: &[u8]) -> u64 {
     let mut h = FNV_OFFSET;
     for &b in data {
         h ^= b as u64;
         h = h.wrapping_mul(FNV_PRIME);
     }
-    h | 1
+    h | 1 // never zero — 0 is the empty-slot sentinel
 }
 
 fn main() {
@@ -488,10 +493,15 @@ fn read_u64_le(data: &[u8], off: usize) -> u64 {
     u64::from_le_bytes(data[off..off + 8].try_into().unwrap())
 }
 
+/// Lemire fast range reduction: maps a u64 hash into [0, n) via
+/// fixed-point multiply — one `mul` + shift, no division.
+fn fast_reduce(h: u64, n: usize) -> usize {
+    ((h as u128).wrapping_mul(n as u128) >> 64) as usize
+}
+
 fn build_frozen_table(keys: &[Vec<u8>], values: Option<&[u32]>, slot_size: usize) -> Vec<u8> {
     let num_entries = keys.len();
-    let num_slots = (num_entries * 4).div_ceil(3).next_power_of_two().max(4);
-    let mask = num_slots - 1;
+    let num_slots = (num_entries * 4).div_ceil(3).max(4);
     let mut string_pool = Vec::new();
     let mut slots = vec![0u8; num_slots * slot_size];
 
@@ -501,7 +511,7 @@ fn build_frozen_table(keys: &[Vec<u8>], values: Option<&[u32]>, slot_size: usize
         let key_len = key.len() as u16;
         string_pool.extend_from_slice(key);
 
-        let mut idx = (h as usize) & mask;
+        let mut idx = fast_reduce(h, num_slots);
         loop {
             let s = idx * slot_size;
             if read_u64_le(&slots, s) == 0 {
@@ -513,7 +523,8 @@ fn build_frozen_table(keys: &[Vec<u8>], values: Option<&[u32]>, slot_size: usize
                 }
                 break;
             }
-            idx = (idx + 1) & mask;
+            idx += 1;
+            if idx == num_slots { idx = 0; }
         }
     }
 

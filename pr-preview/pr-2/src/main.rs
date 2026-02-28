@@ -9,7 +9,6 @@ mod embedded {
 }
 
 use base64::Engine;
-use rayon::prelude::*;
 use std::fs;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
@@ -207,7 +206,55 @@ fn git_list_files(dir: &Path) -> Vec<PathBuf> {
     }
 }
 
-fn matches_ignore(file_path: &Path, base_dir: &Path, patterns: &[String]) -> bool {
+struct CompiledPattern {
+    raw: String,
+    has_slash: bool,
+    has_glob: bool,
+    regex: Option<fancy_regex::Regex>,
+}
+
+fn compile_patterns(patterns: &[String]) -> Vec<CompiledPattern> {
+    patterns
+        .iter()
+        .map(|pat| {
+            let has_slash = pat.contains('/');
+            let has_glob = pat.contains('*');
+            let regex = if has_glob {
+                let mut re = String::from("^");
+                let chars: Vec<char> = pat.chars().collect();
+                let mut i = 0;
+                while i < chars.len() {
+                    if chars[i] == '*' && i + 1 < chars.len() && chars[i + 1] == '*' {
+                        re.push_str(".*");
+                        i += 2;
+                    } else if chars[i] == '*' {
+                        re.push_str("[^/]*");
+                        i += 1;
+                    } else {
+                        let c = chars[i];
+                        if ".+^${}()|[]\\".contains(c) {
+                            re.push('\\');
+                        }
+                        re.push(c);
+                        i += 1;
+                    }
+                }
+                re.push('$');
+                fancy_regex::Regex::new(&re).ok()
+            } else {
+                None
+            };
+            CompiledPattern {
+                raw: pat.clone(),
+                has_slash,
+                has_glob,
+                regex,
+            }
+        })
+        .collect()
+}
+
+fn matches_ignore(file_path: &Path, base_dir: &Path, patterns: &[CompiledPattern]) -> bool {
     if patterns.is_empty() {
         return false;
     }
@@ -221,41 +268,17 @@ fn matches_ignore(file_path: &Path, base_dir: &Path, patterns: &[String]) -> boo
         .unwrap_or_default();
 
     for pat in patterns {
-        let target = if pat.contains('/') { &rel } else { &basename };
-        if glob_match(pat, target) {
-            return true;
+        let target = if pat.has_slash { &rel } else { &basename };
+        if let Some(ref re) = pat.regex {
+            if re.is_match(target).unwrap_or(false) {
+                return true;
+            }
         }
-        if !pat.contains('*') && (rel == *pat || rel.starts_with(&format!("{}/", pat))) {
+        if !pat.has_glob && (rel == pat.raw || rel.starts_with(&format!("{}/", pat.raw))) {
             return true;
         }
     }
     false
-}
-
-fn glob_match(pattern: &str, text: &str) -> bool {
-    let mut re = String::from("^");
-    let chars: Vec<char> = pattern.chars().collect();
-    let mut i = 0;
-    while i < chars.len() {
-        if chars[i] == '*' && i + 1 < chars.len() && chars[i + 1] == '*' {
-            re.push_str(".*");
-            i += 2;
-        } else if chars[i] == '*' {
-            re.push_str("[^/]*");
-            i += 1;
-        } else {
-            let c = chars[i];
-            if ".+^${}()|[]\\".contains(c) {
-                re.push('\\');
-            }
-            re.push(c);
-            i += 1;
-        }
-    }
-    re.push('$');
-    fancy_regex::Regex::new(&re)
-        .map(|r| r.is_match(text).unwrap_or(false))
-        .unwrap_or(false)
 }
 
 fn expand_dir(dir: &Path, use_gitignore: bool) -> Vec<PathBuf> {
@@ -290,6 +313,7 @@ fn expand_paths(
     use_gitignore: bool,
     ignore_patterns: &[String],
 ) -> Vec<PathBuf> {
+    let compiled = compile_patterns(ignore_patterns);
     let mut files = Vec::new();
     for p in paths {
         let path = PathBuf::from(p);
@@ -303,7 +327,7 @@ fn expand_paths(
                 std::process::exit(1);
             }
             for f in expand_dir(&path, use_gitignore) {
-                if !matches_ignore(&f, &path, ignore_patterns) {
+                if !matches_ignore(&f, &path, &compiled) {
                     files.push(f);
                 }
             }
@@ -459,7 +483,12 @@ fn main() {
             tokenizers.iter().map(|(_, tok)| tok.count_tokens(&input.text)).collect()
         };
         let results: Vec<Vec<usize>> = if use_parallel {
-            inputs.par_iter().map(count_all).collect()
+            std::thread::scope(|s| {
+                let handles: Vec<_> = inputs.iter().map(|input| {
+                    s.spawn(|| count_all(input))
+                }).collect();
+                handles.into_iter().map(|h| h.join().unwrap()).collect()
+            })
         } else {
             inputs.iter().map(count_all).collect()
         };
@@ -476,7 +505,12 @@ fn main() {
         let tok = &tokenizers[0].1;
         let count_one = |input: &Input| tok.count_tokens(&input.text);
         let counts: Vec<usize> = if use_parallel {
-            inputs.par_iter().map(count_one).collect()
+            std::thread::scope(|s| {
+                let handles: Vec<_> = inputs.iter().map(|input| {
+                    s.spawn(|| count_one(input))
+                }).collect();
+                handles.into_iter().map(|h| h.join().unwrap()).collect()
+            })
         } else {
             inputs.iter().map(count_one).collect()
         };

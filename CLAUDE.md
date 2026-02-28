@@ -12,7 +12,7 @@ js/diff.js                  Word-level LCS diff
 js/tokenizer.js             Multi-model tokenizer: lazy loading, fallback heuristics
 js/claude-tokenizer.js      Trie-based Claude tokenizer (local vocab)
 js/zbase32.js               zbase32 encoding for URL sharing
-data/claude-vocab.json      36,495 Claude vocabulary tokens
+data/claude-vocab.json      38,360 Claude vocabulary tokens
 Cargo.toml                  Rust CLI package definition
 build.rs                    Compile-time double-array trie + frozen hash tables
 src/main.rs                 Rust CLI: arg parsing, model dispatch, output

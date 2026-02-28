@@ -10,7 +10,6 @@ import {
 } from "./tokenizer.js";
 import { encodePayload, decodePayload, decodePayloadBase64 } from "./zbase32.js";
 
-// ===== State =====
 let textA = "";
 let textB = "";
 let model = localStorage.getItem("tde-model") || "claude";
@@ -19,10 +18,8 @@ let compareMode = false;
 let mobileTab = "a";
 let highlightA = true;
 let highlightB = true;
-// Pre-computed token counts from share link (shown before model loads)
-let preTokens = null; // { a: number, b: number, model: string }
+let preTokens = null;
 
-// Validate stored model
 if (!MODEL_PROFILES.find((p) => p.name === model)) model = "claude";
 
 function savePrefs() {
@@ -30,66 +27,30 @@ function savePrefs() {
   localStorage.setItem("tde-showAll", showAll);
 }
 
-// ===== DOM refs =====
+const $ = (id) => document.getElementById(id);
 const mainContent = document.querySelector(".main-content");
-const panelA = document.getElementById("panel-a");
-const panelB = document.getElementById("panel-b");
-const textareaA = document.getElementById("textarea-a");
-const textareaB = document.getElementById("textarea-b");
-
-// Panel titles
-const panelTitleA = document.getElementById("panel-title-a");
-
-// Model selector (in diff summary)
-const modelSelectorA = document.getElementById("model-selector-a");
-const modelDotA = document.getElementById("model-dot-a");
-const modelNameA = document.getElementById("model-name-a");
-const allModelsA = document.getElementById("all-models-a");
-const modelDropdown = document.getElementById("model-dropdown");
-
-// Token counts (in panel footers)
-const tokenCountA = document.getElementById("tokencount-a");
-const tokenCountB = document.getElementById("tokencount-b");
-
-// Char counts
-const charCountA = document.getElementById("char-count-a");
-const charCountB = document.getElementById("char-count-b");
-
-// Compare toggle
-const compareToggle = document.getElementById("compare-toggle");
-const compareBtn = document.getElementById("compare-btn");
-const closePanelB = document.getElementById("close-panel-b");
-
-// Mobile tabs
-const mobileTabsContainer = document.getElementById("mobile-tabs");
+const panelA = $("panel-a"), panelB = $("panel-b");
+const textareaA = $("textarea-a"), textareaB = $("textarea-b");
+const panelTitleA = $("panel-title-a");
+const modelSelectorA = $("model-selector-a"), modelDotA = $("model-dot-a");
+const modelNameA = $("model-name-a"), allModelsA = $("all-models-a");
+const modelDropdown = $("model-dropdown");
+const tokenCountA = $("tokencount-a"), tokenCountB = $("tokencount-b");
+const charCountA = $("char-count-a"), charCountB = $("char-count-b");
+const compareToggle = $("compare-toggle"), compareBtn = $("compare-btn");
+const closePanelB = $("close-panel-b");
+const mobileTabsContainer = $("mobile-tabs");
 const mobileTabBtns = document.querySelectorAll(".mobile-tab");
+const diffSummary = $("diff-summary"), diffHeroNumber = $("diff-hero-number");
+const diffHeroLabel = $("diff-hero-label"), diffSummaryDetail = $("diff-summary-detail");
+const diffSummaryAll = $("diff-summary-all"), shareBtn = $("share-btn");
+const tokenViewBtnA = $("token-view-btn-a"), tokenViewBtnB = $("token-view-btn-b");
+const tokenHighlightA = $("token-highlight-a"), tokenHighlightB = $("token-highlight-b");
+const modelSelectNativeCompare = $("model-select-native-compare");
+const diffCard = $("diff-card"), diffCardLabel = $("diff-card-label");
+const diffStatsAdded = $("diff-stats-added"), diffStatsRemoved = $("diff-stats-removed");
+const diffStatsUnchanged = $("diff-stats-unchanged"), diffBody = $("diff-body");
 
-// Diff summary
-const diffSummary = document.getElementById("diff-summary");
-const diffHeroNumber = document.getElementById("diff-hero-number");
-const diffHeroLabel = document.getElementById("diff-hero-label");
-const diffSummaryDetail = document.getElementById("diff-summary-detail");
-const diffSummaryAll = document.getElementById("diff-summary-all");
-const shareBtn = document.getElementById("share-btn");
-
-// Token highlight
-const tokenViewBtnA = document.getElementById("token-view-btn-a");
-const tokenViewBtnB = document.getElementById("token-view-btn-b");
-const tokenHighlightA = document.getElementById("token-highlight-a");
-const tokenHighlightB = document.getElementById("token-highlight-b");
-
-// Native model select (mobile)
-const modelSelectNativeCompare = document.getElementById("model-select-native-compare");
-
-// Diff card
-const diffCard = document.getElementById("diff-card");
-const diffCardLabel = document.getElementById("diff-card-label");
-const diffStatsAdded = document.getElementById("diff-stats-added");
-const diffStatsRemoved = document.getElementById("diff-stats-removed");
-const diffStatsUnchanged = document.getElementById("diff-stats-unchanged");
-const diffBody = document.getElementById("diff-body");
-
-// ===== Helpers =====
 function escapeHtml(str) {
   return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
@@ -98,7 +59,6 @@ function formatNumber(n) {
   return n.toLocaleString();
 }
 
-// Return best available token count: pre-computed from share link, or live
 function bestTokenCount(text, panel) {
   if (preTokens && preTokens.model === model && !isReady(model)) {
     return { count: preTokens[panel], exact: true };
@@ -122,34 +82,28 @@ function formatDelta(d) {
   return { cls, val };
 }
 
-// ===== Debounce =====
 const highlightTimers = { a: null, b: null };
 const HIGHLIGHT_DEBOUNCE_MS = 300;
 
 function debouncedRenderHighlight(container, text, timerKey) {
   const textarea = timerKey === "a" ? textareaA : textareaB;
-  // While waiting for highlight to render, show plain text
   textarea.classList.remove("token-overlay-active");
 
   clearTimeout(highlightTimers[timerKey]);
   highlightTimers[timerKey] = setTimeout(() => {
     renderTokenHighlight(container, text);
-    // Highlight is now up-to-date — switch to transparent overlay
     textarea.classList.add("token-overlay-active");
   }, HIGHLIGHT_DEBOUNCE_MS);
 }
 
-// ===== Model loading =====
 function ensureModelLoaded(name) {
   if (isReady(name) || getStatus(name) === "error") return;
   loadModel(name, () => {
-    // Clear pre-computed tokens once the real model is available
     if (preTokens && preTokens.model === name) preTokens = null;
     render();
   });
 }
 
-// ===== Layout =====
 function updateLayout() {
   if (compareMode) {
     mainContent.classList.add("compare-mode");
@@ -167,7 +121,6 @@ function updateLayout() {
     panelTitleA.textContent = "Input text";
 
     const hasText = textA.trim();
-    // Show diff summary strip (model chooser + count + share) when text exists
     diffSummary.style.display = hasText ? "" : "none";
     shareBtn.style.display = hasText ? "" : "none";
     compareToggle.style.display = hasText ? "" : "none";
@@ -179,7 +132,6 @@ function updateMobileTabs() {
     mobileTabsContainer.style.display = "none";
     return;
   }
-  // Clear inline display:none so CSS grid rule can take effect on mobile
   mobileTabsContainer.style.display = "";
   mobileTabBtns.forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.tab === mobileTab);
@@ -188,20 +140,15 @@ function updateMobileTabs() {
   panelB.classList.toggle("mobile-hidden", mobileTab !== "b");
 }
 
-// ===== Model display rendering =====
 function renderModelDisplay() {
   const profile = getProfile(model);
   if (!profile) return;
 
-  // Sync native select
   modelSelectNativeCompare.value = model;
-
-  // Always update diff summary model selector (visible in both modes now)
   modelDotA.style.background = profile.color;
   modelNameA.textContent = profile.displayName;
 
   if (compareMode) {
-    // All-models row
     if (showAll) {
       const allCounts = countAllTokenizers(textA + " " + textB);
       let html = "";
@@ -222,7 +169,6 @@ function renderModelDisplay() {
     allModelsA.style.display = "none";
   }
 
-  // Update token counts in panel footers
   const bA = bestTokenCount(textA, "a");
   const prefixA = bA.exact ? "" : "~";
   tokenCountA.textContent = prefixA + formatNumber(bA.count) + " tok";
@@ -231,12 +177,10 @@ function renderModelDisplay() {
   const prefixB = bB.exact ? "" : "~";
   tokenCountB.textContent = prefixB + formatNumber(bB.count) + " tok";
 
-  // Update char counts
   charCountA.textContent = formatNumber(textA.length) + " chr";
   charCountB.textContent = formatNumber(textB.length) + " chr";
 }
 
-// ===== Dropdown =====
 let dropdownOpen = false;
 let activeDropdownEl = null;
 
@@ -317,7 +261,6 @@ function closeDropdown() {
   dropdownOpen = false;
 }
 
-// ===== Diff summary =====
 function renderDiffSummary() {
   const profile = getProfile(model);
   if (!profile) return;
@@ -326,7 +269,6 @@ function renderDiffSummary() {
   const tokA = bA.count;
 
   if (!compareMode) {
-    // Single-panel mode: show token count only
     if (!textA.trim()) return;
     const fmtA = (bA.exact ? "" : "~") + formatNumber(tokA);
     diffHeroNumber.textContent = fmtA;
@@ -353,7 +295,6 @@ function renderDiffSummary() {
   diffHeroNumber.className = `diff-hero-number ${cls}`;
   diffHeroLabel.textContent = "tokens";
 
-  // Percentage
   let pctText = "";
   if (diff !== 0 && tokA > 0) {
     const pct = ((diff / tokA) * 100).toFixed(1);
@@ -369,7 +310,6 @@ function renderDiffSummary() {
     <span class="detail-b">Modified: ${fmtB}${pctText}</span>
   `;
 
-  // All-models deltas
   if (showAll) {
     const allCounts = MODEL_PROFILES.map((p) => ({
       name: p.name,
@@ -395,7 +335,6 @@ function renderDiffSummary() {
   }
 }
 
-// ===== Diff card =====
 function renderDiffCard() {
   if (!compareMode || textA === textB || (!textA && !textB)) {
     diffCard.style.display = "none";
@@ -432,22 +371,11 @@ function renderDiffCard() {
     diffStatsUnchanged.textContent = `${getWordCount(unchangedText)} unchanged`;
   }
 
-  // Render diff body
-  let html = "";
-  for (const seg of diff) {
-    const escaped = escapeHtml(seg.text);
-    if (seg.type === "added") {
-      html += `<span class="diff-span-added">${escaped}</span>`;
-    } else if (seg.type === "removed") {
-      html += `<span class="diff-span-removed">${escaped}</span>`;
-    } else {
-      html += `<span class="diff-span-unchanged">${escaped}</span>`;
-    }
-  }
-  diffBody.innerHTML = html;
+  diffBody.innerHTML = diff.map((seg) =>
+    `<span class="diff-span-${seg.type}">${escapeHtml(seg.text)}</span>`
+  ).join("");
 }
 
-// ===== Token highlight =====
 function renderTokenHighlight(container, text) {
   if (!text || !text.trim()) {
     container.innerHTML = '<span class="tok-empty">Enter text to see token boundaries</span>';
@@ -465,7 +393,6 @@ function renderTokenHighlight(container, text) {
   let html = "";
   for (let i = 0; i < tokens.length; i++) {
     const cls = `tok-${i % 6}`;
-    // Split at line breaks so they aren't swallowed inside colored spans
     const parts = tokens[i].split(/(\r\n|\r|\n)/);
     for (const part of parts) {
       if (part === "\n" || part === "\r" || part === "\r\n") {
@@ -496,7 +423,6 @@ function updateTokenHighlights() {
   }
 }
 
-// ===== Main render =====
 function render() {
   updateLayout();
   renderModelDisplay();
@@ -505,7 +431,6 @@ function render() {
   updateTokenHighlights();
 }
 
-// ===== Compare mode =====
 function enterCompareMode() {
   compareMode = true;
   mobileTab = "b";
@@ -523,14 +448,12 @@ function exitCompareMode() {
   render();
 }
 
-// ===== Paste-prefill =====
 let pasteIntoA = false;
 
 textareaA.addEventListener("paste", () => {
   if (!textB && !compareMode) pasteIntoA = true;
 });
 
-// ===== Event handlers =====
 textareaA.addEventListener("input", () => {
   textA = textareaA.value;
   if (pasteIntoA) {
@@ -548,7 +471,6 @@ textareaB.addEventListener("input", () => {
   render();
 });
 
-// Model selector clicks
 modelSelectorA.addEventListener("click", (e) => {
   e.stopPropagation();
   if (dropdownOpen) {
@@ -558,22 +480,18 @@ modelSelectorA.addEventListener("click", (e) => {
   }
 });
 
-// Close dropdown on outside click
 document.addEventListener("click", () => {
   if (dropdownOpen) closeDropdown();
 });
 
-// Compare toggle
 compareBtn.addEventListener("click", () => {
   enterCompareMode();
 });
 
-// Close panel B
 closePanelB.addEventListener("click", () => {
   exitCompareMode();
 });
 
-// Mobile tabs
 mobileTabBtns.forEach((btn) => {
   btn.addEventListener("click", () => {
     mobileTab = btn.dataset.tab;
@@ -581,30 +499,14 @@ mobileTabBtns.forEach((btn) => {
   });
 });
 
-// Token view toggles
-tokenViewBtnA.addEventListener("click", () => {
-  highlightA = !highlightA;
-  if (highlightA) ensureModelLoaded(model);
-  render();
-});
+for (const [btn, getH, setH, ta, th] of [
+  [tokenViewBtnA, () => highlightA, (v) => highlightA = v, textareaA, tokenHighlightA],
+  [tokenViewBtnB, () => highlightB, (v) => highlightB = v, textareaB, tokenHighlightB],
+]) {
+  btn.addEventListener("click", () => { setH(!getH()); if (getH()) ensureModelLoaded(model); render(); });
+  ta.addEventListener("scroll", () => { th.scrollTop = ta.scrollTop; th.scrollLeft = ta.scrollLeft; });
+}
 
-tokenViewBtnB.addEventListener("click", () => {
-  highlightB = !highlightB;
-  if (highlightB) ensureModelLoaded(model);
-  render();
-});
-
-// Scroll sync: keep highlight div in sync with textarea scroll position
-textareaA.addEventListener("scroll", () => {
-  tokenHighlightA.scrollTop = textareaA.scrollTop;
-  tokenHighlightA.scrollLeft = textareaA.scrollLeft;
-});
-textareaB.addEventListener("scroll", () => {
-  tokenHighlightB.scrollTop = textareaB.scrollTop;
-  tokenHighlightB.scrollLeft = textareaB.scrollLeft;
-});
-
-// Native model select (mobile)
 function populateNativeSelect() {
   modelSelectNativeCompare.innerHTML = "";
   for (const p of MODEL_PROFILES) {
@@ -624,7 +526,6 @@ modelSelectNativeCompare.addEventListener("change", (e) => {
   render();
 });
 
-// Share
 shareBtn.addEventListener("click", () => {
   if (!textA && !textB) return;
   let highlight = "";
@@ -632,14 +533,14 @@ shareBtn.addEventListener("click", () => {
   if (highlightB) highlight += "b";
   const tokens = { a: countTokens(textA, model), b: countTokens(textB, model) };
   const encoded = encodePayload(textA, textB, { model, highlight: highlight || undefined, tokens });
-  const url = `${window.location.origin}${window.location.pathname}?d=${encoded}`;
+  const url = `${window.location.origin}${window.location.pathname}?b=${encoded}`;
 
   if (url.length > 8000) {
     showToast("Text too long to share via URL");
     return;
   }
 
-  window.history.replaceState(null, "", `?d=${encoded}`);
+  window.history.replaceState(null, "", `?b=${encoded}`);
   navigator.clipboard.writeText(url).then(() => {
     showToast("Link copied to clipboard");
   }).catch(() => {
@@ -666,7 +567,6 @@ function showToast(message) {
   setTimeout(() => toast.classList.remove("show"), 2000);
 }
 
-// ===== Load from URL =====
 function loadFromURL() {
   const params = new URLSearchParams(window.location.search);
   const zb32 = params.get("d");
@@ -677,30 +577,24 @@ function loadFromURL() {
     textB = decoded.b;
     textareaA.value = textA;
     textareaB.value = textB;
-    // Restore model if shared
     if (decoded.m && MODEL_PROFILES.find((p) => p.name === decoded.m)) {
       model = decoded.m;
       savePrefs();
     }
-    // Restore pre-computed token counts
     if (decoded.t && typeof decoded.t.a === "number" && typeof decoded.t.b === "number") {
       preTokens = { a: decoded.t.a, b: decoded.t.b, model: model };
     }
-    // Restore token view state
     if (decoded.h) {
       highlightA = decoded.h.includes("a");
       highlightB = decoded.h.includes("b");
     }
-    // Enter compare mode if both texts exist and differ
     if (textA && textB) {
       compareMode = true;
     }
   }
 }
 
-// ===== Init =====
 loadFromURL();
-// Sync with browser-restored textarea values (browsers cache form values on reload)
 if (!textA && textareaA.value) {
   textA = textareaA.value;
 }

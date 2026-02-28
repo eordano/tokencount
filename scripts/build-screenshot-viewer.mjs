@@ -93,101 +93,36 @@ const html = `<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Test Screenshots</title>
 <style>
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  :root {
-    --bg: #1a1a2e; --bg2: #16213e; --bg3: #0f3460;
-    --fg: #e0e0e0; --fg2: #999; --accent: #e94560;
-    --accent2: #533483; --green: #4ade80; --border: #2a2a4a;
-    --sidebar-w: 280px;
-  }
-  html { height: 100%; }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-    background: var(--bg); color: var(--fg);
-    height: 100%; display: flex; flex-direction: column; overflow: hidden;
-  }
-
-  /* Top bar */
-  header {
-    display: flex; align-items: center; gap: 12px;
-    padding: 8px 16px; background: var(--bg2); border-bottom: 1px solid var(--border);
-    flex-shrink: 0; min-height: 48px; z-index: 10;
-  }
-  header h1 { font-size: 14px; font-weight: 600; white-space: nowrap; }
-  .mode-toggle {
-    display: flex; background: var(--bg); border-radius: 6px; overflow: hidden;
-    border: 1px solid var(--border);
-  }
-  .mode-toggle button {
-    padding: 5px 14px; border: none; background: transparent;
-    color: var(--fg2); font-size: 13px; cursor: pointer; font-weight: 500;
-    transition: background .1s, color .1s;
-  }
-  .mode-toggle button.active { background: var(--accent); color: #fff; }
-  .mode-toggle button:hover:not(.active) { background: var(--border); color: var(--fg); }
-  .nav-info {
-    font-size: 13px; color: var(--fg2); margin-left: auto; white-space: nowrap;
-    display: flex; align-items: center; gap: 8px;
-  }
-  .nav-info kbd {
-    display: inline-block; padding: 1px 6px; background: var(--bg);
-    border: 1px solid var(--border); border-radius: 3px; font-size: 11px;
-    font-family: inherit;
-  }
-
-  /* Layout */
-  .container { display: flex; flex: 1; overflow: hidden; }
-
-  /* Sidebar */
-  .sidebar {
-    width: var(--sidebar-w); min-width: var(--sidebar-w); overflow-y: auto;
-    background: var(--bg2); border-right: 1px solid var(--border);
-    scrollbar-width: thin; scrollbar-color: var(--border) transparent;
-  }
-  .group-header {
-    padding: 8px 12px 4px; font-size: 11px; font-weight: 600;
-    color: var(--accent); text-transform: uppercase; letter-spacing: .5px;
-    position: sticky; top: 0; background: var(--bg2); z-index: 1;
-  }
-  .sidebar-item {
-    display: flex; align-items: center; gap: 8px;
-    padding: 5px 12px 5px 20px; cursor: pointer; font-size: 12px;
-    border-left: 3px solid transparent; transition: background .08s;
-    line-height: 1.3;
-  }
-  .sidebar-item:hover { background: rgba(255,255,255,.04); }
-  .sidebar-item.active {
-    background: rgba(233,69,96,.12); border-left-color: var(--accent);
-    color: #fff;
-  }
-  .sidebar-item.disabled {
-    opacity: .35; cursor: default; pointer-events: none;
-  }
-  .sidebar-item .dot {
-    width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
-  }
-  .sidebar-item .dot.both { background: var(--green); }
-  .sidebar-item .dot.desktop-only { background: #60a5fa; }
-  .sidebar-item .dot.mobile-only { background: #f472b6; }
-
-  /* Main */
-  .main {
-    flex: 1; display: flex; align-items: center; justify-content: center;
-    overflow: auto; padding: 16px; position: relative;
-  }
-  .main img {
-    max-width: 100%; max-height: 100%; object-fit: contain;
-    border-radius: 4px; box-shadow: 0 4px 24px rgba(0,0,0,.5);
-  }
-  .disabled-msg {
-    text-align: center; color: var(--fg2);
-  }
-  .disabled-msg .icon { font-size: 48px; margin-bottom: 12px; display: block; }
-  .disabled-msg p { font-size: 15px; }
-  .disabled-msg .sub { font-size: 12px; margin-top: 4px; color: var(--fg2); opacity: .7; }
-
-  /* Preload hidden images */
-  .preload { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; overflow: hidden; }
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#1a1a2e;--bg2:#16213e;--fg:#e0e0e0;--fg2:#999;--accent:#e94560;--green:#4ade80;--border:#2a2a4a;--sw:280px}
+html{height:100%}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;background:var(--bg);color:var(--fg);height:100%;display:flex;flex-direction:column;overflow:hidden}
+header{display:flex;align-items:center;gap:12px;padding:8px 16px;background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0;min-height:48px;z-index:10}
+header h1{font-size:14px;font-weight:600;white-space:nowrap}
+.mode-toggle{display:flex;background:var(--bg);border-radius:6px;overflow:hidden;border:1px solid var(--border)}
+.mode-toggle button{padding:5px 14px;border:none;background:transparent;color:var(--fg2);font-size:13px;cursor:pointer;font-weight:500;transition:background .1s,color .1s}
+.mode-toggle button.active{background:var(--accent);color:#fff}
+.mode-toggle button:hover:not(.active){background:var(--border);color:var(--fg)}
+.nav-info{font-size:13px;color:var(--fg2);margin-left:auto;white-space:nowrap;display:flex;align-items:center;gap:8px}
+.nav-info kbd{display:inline-block;padding:1px 6px;background:var(--bg);border:1px solid var(--border);border-radius:3px;font-size:11px;font-family:inherit}
+.container{display:flex;flex:1;overflow:hidden}
+.sidebar{width:var(--sw);min-width:var(--sw);overflow-y:auto;background:var(--bg2);border-right:1px solid var(--border);scrollbar-width:thin;scrollbar-color:var(--border) transparent}
+.group-header{padding:8px 12px 4px;font-size:11px;font-weight:600;color:var(--accent);text-transform:uppercase;letter-spacing:.5px;position:sticky;top:0;background:var(--bg2);z-index:1}
+.sidebar-item{display:flex;align-items:center;gap:8px;padding:5px 12px 5px 20px;cursor:pointer;font-size:12px;border-left:3px solid transparent;transition:background .08s;line-height:1.3}
+.sidebar-item:hover{background:rgba(255,255,255,.04)}
+.sidebar-item.active{background:rgba(233,69,96,.12);border-left-color:var(--accent);color:#fff}
+.sidebar-item.disabled{opacity:.35;cursor:default;pointer-events:none}
+.sidebar-item .dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.sidebar-item .dot.both{background:var(--green)}
+.sidebar-item .dot.desktop-only{background:#60a5fa}
+.sidebar-item .dot.mobile-only{background:#f472b6}
+.main{flex:1;display:flex;align-items:center;justify-content:center;overflow:auto;padding:16px;position:relative}
+.main img{max-width:100%;max-height:100%;object-fit:contain;border-radius:4px;box-shadow:0 4px 24px rgba(0,0,0,.5)}
+.disabled-msg{text-align:center;color:var(--fg2)}
+.disabled-msg .icon{font-size:48px;margin-bottom:12px;display:block}
+.disabled-msg p{font-size:15px}
+.disabled-msg .sub{font-size:12px;margin-top:4px;color:var(--fg2);opacity:.7}
+.preload{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;overflow:hidden}
 </style>
 </head>
 <body>
@@ -244,7 +179,7 @@ function buildSidebar() {
   let html = "";
   let offset = 0;
   for (const g of GROUPS) {
-    html += '<div class="group-header">' + g.section + " – " + g.title + "</div>";
+    html += '<div class="group-header">' + g.section + " \\u2013 " + g.title + "</div>";
     for (let j = 0; j < g.count; j++) {
       const gi = offset + j;
       const item = ITEMS[gi];

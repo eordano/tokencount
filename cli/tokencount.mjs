@@ -1,6 +1,3 @@
-// tokencount — count tokens in files or stdin using various LLM tokenizers
-// Usage: tokencount [options] [path...]
-
 import fs from "node:fs";
 import path from "node:path";
 import { execSync } from "node:child_process";
@@ -9,6 +6,7 @@ import { loadModel, countTokens, MODEL_NAMES } from "./lib/tokenizer.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const VERSION = JSON.parse(fs.readFileSync(path.resolve(__dirname, "..", "package.json"), "utf8")).version;
 
 const DEFAULT_BASE_URL = "https://tokencount.eordano.com/";
 
@@ -23,6 +21,7 @@ Options:
   --ignore <pattern>   Skip files/dirs matching pattern (repeatable)
   --no-gitignore       Don't skip .gitignore'd files when recursing
   -s, --share          Print a shareable URL instead of counts
+  -V, --version        Show version
   -h, --help           Show this help
 
 Models: ${MODEL_NAMES.join(", ")}
@@ -34,14 +33,14 @@ Share mode (-s) takes one or two files (or stdin) and prints a URL
 that opens the web app with the text pre-filled. Use two files to
 get a side-by-side diff. Override the base URL with TOKEN_COUNT_URL.`;
 
-// ── Arg parsing ──────────────────────────────────────────────────────────
-
 function parseArgs(argv) {
   const args = { model: "claude", all: false, recursive: false, gitignore: true, ignore: [], share: false, help: false, paths: [] };
   let i = 0;
   while (i < argv.length) {
     const arg = argv[i];
-    if (arg === "-h" || arg === "--help") {
+    if (arg === "-V" || arg === "--version") {
+      args.version = true;
+    } else if (arg === "-h" || arg === "--help") {
       args.help = true;
     } else if (arg === "-r" || arg === "--recursive") {
       args.recursive = true;
@@ -76,21 +75,16 @@ function parseArgs(argv) {
   return args;
 }
 
-// ── Model directory discovery ────────────────────────────────────────────
-
 function findModelsDir() {
-  // 1. Environment variable
   const envDir = process.env.TOKEN_COUNT_MODELS;
   if (envDir) {
     if (fs.existsSync(envDir)) return envDir;
     process.stderr.write(`Warning: TOKEN_COUNT_MODELS path does not exist: ${envDir}\n`);
   }
 
-  // 2. Relative to binary: ../share/tokencount/models/
   const relDir = path.resolve(__dirname, "..", "share", "tokencount", "models");
   if (fs.existsSync(relDir)) return relDir;
 
-  // 3. Sibling models/ directory (dev / dist layout)
   const siblingDir = path.resolve(__dirname, "models");
   if (fs.existsSync(siblingDir)) return siblingDir;
 
@@ -100,8 +94,6 @@ function findModelsDir() {
   );
   process.exit(1);
 }
-
-// ── File utilities ───────────────────────────────────────────────────────
 
 function isBinary(filePath) {
   const fd = fs.openSync(filePath, "r");
@@ -126,12 +118,6 @@ function gitListFiles(dir) {
   return out.split("\0").filter(Boolean).map((f) => path.join(dir, f));
 }
 
-/**
- * Test whether a file path matches an ignore pattern.
- * Patterns without / match against the basename (like .gitignore).
- * Patterns with / match against the full relative path.
- * Supports * (any chars except /) and ** (any chars including /).
- */
 function matchesIgnore(filePath, baseDir, patterns) {
   if (patterns.length === 0) return false;
   const rel = path.relative(baseDir, filePath);
@@ -146,7 +132,6 @@ function matchesIgnore(filePath, baseDir, patterns) {
       + "$"
     );
     if (regex.test(target)) return true;
-    // Pattern without a glob also matches as a directory prefix
     if (!pat.includes("*") && (rel === pat || rel.startsWith(pat + "/"))) return true;
   }
   return false;
@@ -189,8 +174,6 @@ function expandPaths(paths, recursive, useGitignore, ignorePatterns) {
   return files;
 }
 
-// ── URL sharing ─────────────────────────────────────────────────────────
-
 function base64UrlEncode(buf) {
   return buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
@@ -204,17 +187,17 @@ function buildShareUrl(textA, textB, model, tokens) {
   return `${base.replace(/\/$/, "")}/?b=${encoded}`;
 }
 
-// ── Output formatting ────────────────────────────────────────────────────
-
 function formatLine(count, label) {
   return `${String(count).padStart(8)} ${label}\n`;
 }
 
-// ── Main ─────────────────────────────────────────────────────────────────
-
 async function main() {
   const args = parseArgs(process.argv.slice(2));
 
+  if (args.version) {
+    process.stdout.write(`tokencount ${VERSION}\n`);
+    process.exit(0);
+  }
   if (args.help) {
     process.stdout.write(HELP + "\n");
     process.exit(0);
@@ -222,7 +205,6 @@ async function main() {
 
   const models = args.all ? MODEL_NAMES : [args.model];
 
-  // Validate model names
   for (const m of models) {
     if (!MODEL_NAMES.includes(m)) {
       process.stderr.write(
@@ -232,10 +214,8 @@ async function main() {
     }
   }
 
-  // Read input
-  let inputs; // [{ name, text }]
+  let inputs;
   if (args.paths.length === 0) {
-    // Read from stdin
     const chunks = [];
     for await (const chunk of process.stdin) {
       chunks.push(chunk);
@@ -249,12 +229,10 @@ async function main() {
 
   const modelsDir = findModelsDir();
 
-  // Load requested models
   for (const m of models) {
     await loadModel(m, modelsDir);
   }
 
-  // Share mode — show comparison and print URL
   if (args.share) {
     if (inputs.length > 2) {
       process.stderr.write("Error: --share accepts at most two files (text A and text B)\n");
@@ -283,9 +261,7 @@ async function main() {
     return;
   }
 
-  // Count and output
   if (args.all) {
-    // All-models mode: show each model for each input
     for (const input of inputs) {
       const label = input.name || "stdin";
       for (const m of models) {

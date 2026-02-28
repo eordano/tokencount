@@ -9,8 +9,9 @@ const IDX_MASK: u32 = 0x7FFF_FFFF;
 
 pub struct DATrie {
     root: u32,
-    base: Vec<u32>,
-    check: Vec<u32>,
+    base: &'static [u8],
+    check: &'static [u8],
+    array_size: usize,
 }
 
 impl DATrie {
@@ -18,23 +19,26 @@ impl DATrie {
         let array_size = read_u32(TRIE_BIN, 0) as usize;
         let root = read_u32(TRIE_BIN, 4);
         let base_start = 8;
-        let check_start = 8 + array_size * 4;
-        let mut base = Vec::with_capacity(array_size);
-        let mut check = Vec::with_capacity(array_size);
-        for i in 0..array_size {
-            base.push(read_u32(TRIE_BIN, base_start + i * 4));
-            check.push(read_u32(TRIE_BIN, check_start + i * 4));
+        let check_start = base_start + array_size * 4;
+        DATrie {
+            root,
+            base: &TRIE_BIN[base_start..check_start],
+            check: &TRIE_BIN[check_start..check_start + array_size * 4],
+            array_size,
         }
-        DATrie { root, base, check }
     }
 
     #[inline(always)]
     fn transition(&self, s: u32, byte: u8) -> Option<(u32, bool)> {
-        let t = self.base[s as usize] as usize + byte as usize;
-        if t >= self.check.len() {
+        let off = s as usize * 4;
+        if unlikely(off + 4 > self.base.len()) {
             return None;
         }
-        let c = self.check[t];
+        let t = read_u32(self.base, off) as usize + byte as usize;
+        if t >= self.array_size {
+            return None;
+        }
+        let c = read_u32(self.check, t * 4);
         if c == u32::MAX || (c & IDX_MASK) != s {
             return None;
         }
@@ -76,6 +80,12 @@ impl DATrie {
         }
         count
     }
+}
+
+#[cold]
+#[inline(never)]
+fn unlikely(b: bool) -> bool {
+    b
 }
 
 #[inline(always)]

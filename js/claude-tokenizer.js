@@ -1,5 +1,5 @@
 // Claude tokenizer based on rohangpta/ctoc
-// Uses greedy longest-match over a trie of 36,495 verified Claude tokens
+// Uses greedy longest-match over a trie of 38,360 verified Claude tokens
 // Achieves ~96% accuracy on code, ~99% on English prose (always over-counts)
 
 class TrieNode {

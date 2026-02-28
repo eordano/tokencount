@@ -231,7 +231,19 @@ impl HfTokenizer {
 
         let merges_table = &self.data[self.merges_off..];
 
-        let mut token: Vec<String> = initial.to_vec();
+        // Lay out all initial tokens contiguously in a byte buffer so that
+        // adjacent tokens in the linked list are adjacent in memory.  Merging
+        // two neighbors then becomes a zero-copy range extension — no format!
+        // allocation — matching the pattern used in tiktoken.rs.
+        let total_bytes: usize = initial.iter().map(|s| s.len()).sum();
+        let mut buf = Vec::with_capacity(total_bytes);
+        let mut parts: Vec<(usize, usize)> = Vec::with_capacity(n);
+        for s in initial {
+            let start = buf.len();
+            buf.extend_from_slice(s.as_bytes());
+            parts.push((start, buf.len()));
+        }
+
         let mut next: Vec<usize> = (1..=n).collect();
         let mut prev: Vec<usize> = Vec::with_capacity(n);
         prev.push(usize::MAX);
@@ -240,19 +252,18 @@ impl HfTokenizer {
         let mut gen: Vec<u32> = vec![0; n];
         let mut heap = std::collections::BinaryHeap::new();
 
-        let get_rank = |a: &str, b: &str| -> Option<u64> {
-            frozen::frozen_map_get_pair(merges_table, a.as_bytes(), b.as_bytes())
-                .map(|r| r as u64)
-        };
-
-        let pair_rank = |i: usize, token: &[String], next: &[usize]| -> Option<u64> {
+        let pair_rank = |i: usize, parts: &[(usize, usize)], next: &[usize]| -> Option<u64> {
             let j = next[i];
             if j >= n { return None; }
-            get_rank(&token[i], &token[j])
+            frozen::frozen_map_get_pair(
+                merges_table,
+                &buf[parts[i].0..parts[i].1],
+                &buf[parts[j].0..parts[j].1],
+            ).map(|r| r as u64)
         };
 
         for i in 0..n - 1 {
-            if let Some(rank) = pair_rank(i, &token, &next) {
+            if let Some(rank) = pair_rank(i, &parts, &next) {
                 heap.push(std::cmp::Reverse((rank, i, 0u32)));
             }
         }
@@ -264,14 +275,17 @@ impl HfTokenizer {
             let j = next[i];
             if j >= n || !alive[j] { continue; }
 
-            let current_rank = match get_rank(&token[i], &token[j]) {
-                Some(r) => r,
+            let current_rank = match frozen::frozen_map_get_pair(
+                merges_table,
+                &buf[parts[i].0..parts[i].1],
+                &buf[parts[j].0..parts[j].1],
+            ) {
+                Some(r) => r as u64,
                 None => continue,
             };
             if current_rank != rank { continue; }
 
-            let merged = format!("{}{}", token[i], token[j]);
-            token[i] = merged;
+            parts[i].1 = parts[j].1;
             gen[i] += 1;
 
             alive[j] = false;
@@ -282,12 +296,12 @@ impl HfTokenizer {
 
             if prev[i] != usize::MAX && alive[prev[i]] {
                 let p = prev[i];
-                if let Some(r) = pair_rank(p, &token, &next) {
+                if let Some(r) = pair_rank(p, &parts, &next) {
                     heap.push(std::cmp::Reverse((r, p, gen[p])));
                 }
             }
             if next[i] < n {
-                if let Some(r) = pair_rank(i, &token, &next) {
+                if let Some(r) = pair_rank(i, &parts, &next) {
                     heap.push(std::cmp::Reverse((r, i, gen[i])));
                 }
             }

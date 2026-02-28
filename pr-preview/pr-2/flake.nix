@@ -174,7 +174,7 @@
           npx playwright test --config playwright.bundle.config.js "$@"
         '';
       }) // {
-        tokencount = pkgs.rustPlatform.buildRustPackage {
+        tokencount = pkgs.pkgsStatic.rustPlatform.buildRustPackage {
               pname = "tokencount";
               version = cargoVersion;
               src = pkgs.lib.cleanSourceWith {

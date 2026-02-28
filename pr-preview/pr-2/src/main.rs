@@ -452,16 +452,17 @@ fn main() {
         return;
     }
 
+    let use_parallel = inputs.len() > 1;
+
     if args.all {
-        let results: Vec<Vec<usize>> = inputs
-            .par_iter()
-            .map(|input| {
-                tokenizers
-                    .iter()
-                    .map(|(_, tok)| tok.count_tokens(&input.text))
-                    .collect()
-            })
-            .collect();
+        let count_all = |input: &Input| -> Vec<usize> {
+            tokenizers.iter().map(|(_, tok)| tok.count_tokens(&input.text)).collect()
+        };
+        let results: Vec<Vec<usize>> = if use_parallel {
+            inputs.par_iter().map(count_all).collect()
+        } else {
+            inputs.iter().map(count_all).collect()
+        };
         for (input, counts) in inputs.iter().zip(results.iter()) {
             let label = input.name.as_deref().unwrap_or("stdin");
             for ((model_name, _), count) in tokenizers.iter().zip(counts.iter()) {
@@ -473,10 +474,12 @@ fn main() {
         }
     } else {
         let tok = &tokenizers[0].1;
-        let counts: Vec<usize> = inputs
-            .par_iter()
-            .map(|input| tok.count_tokens(&input.text))
-            .collect();
+        let count_one = |input: &Input| tok.count_tokens(&input.text);
+        let counts: Vec<usize> = if use_parallel {
+            inputs.par_iter().map(count_one).collect()
+        } else {
+            inputs.iter().map(count_one).collect()
+        };
         let total: usize = counts.iter().sum();
         if inputs.len() > 1 {
             for (input, count) in inputs.iter().zip(counts.iter()) {

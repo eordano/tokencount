@@ -1,11 +1,4 @@
 #!/usr/bin/env node
-// Build the tokencount CLI tool
-// Usage: node scripts/build-cli.mjs
-//
-// Produces:
-//   dist/tokencount.mjs   — bundled CLI binary
-//   dist/models/            — tokenizer model data
-
 import { execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -17,7 +10,6 @@ const ROOT = path.resolve(path.dirname(__filename), "..");
 const DIST = path.join(ROOT, "dist");
 const MODELS_OUT = path.join(DIST, "models");
 
-// Repo-to-directory mapping (must match MODEL_PROFILES in js/tokenizer.js)
 const HF_REPO_MAP = {
   "Xenova/gemma-2-tokenizer":              "gemini",
   "deepseek-ai/DeepSeek-V3":               "deepseek",
@@ -29,7 +21,6 @@ const HF_REPO_MAP = {
 };
 const HF_FILES = ["tokenizer.json", "tokenizer_config.json"];
 
-// esbuild plugin: shim out onnxruntime-* and sharp (not needed for tokenizer-only)
 const onnxShimPlugin = {
   name: "shims",
   setup(build) {
@@ -47,8 +38,6 @@ const onnxShimPlugin = {
     }));
   },
 };
-
-// ── Step 1: Bundle with esbuild ──────────────────────────────────────────
 
 async function bundle() {
   console.log("[1/3] Bundling CLI with esbuild...");
@@ -70,12 +59,9 @@ async function bundle() {
   console.log(`  Output: dist/tokencount.mjs (${size} MB)`);
 }
 
-// ── Step 2: Copy/download model data ─────────────────────────────────────
-
 async function copyModels() {
   console.log("[2/3] Preparing model data...");
 
-  // Clean and recreate
   if (fs.existsSync(MODELS_OUT)) fs.rmSync(MODELS_OUT, { recursive: true });
 
   const modelsDir = process.env.MODELS_DIR;
@@ -108,13 +94,10 @@ async function copyModels() {
     }
   }
 
-  // Claude vocab from local source
   const claudeSrc = path.join(ROOT, "data", "claude-vocab.json");
   console.log("  Copying claude-vocab.json");
   fs.copyFileSync(claudeSrc, path.join(MODELS_OUT, "claude-vocab.json"));
 }
-
-// ── Step 3: chmod +x and smoke test ──────────────────────────────────────
 
 function finalize() {
   console.log("[3/3] Finalizing...");
@@ -122,7 +105,6 @@ function finalize() {
   const cli = path.join(DIST, "tokencount.mjs");
   fs.chmodSync(cli, 0o755);
 
-  // Quick smoke test
   try {
     const result = execSync(`echo "hello" | node "${cli}"`, {
       cwd: ROOT,
@@ -135,8 +117,6 @@ function finalize() {
     process.exit(1);
   }
 }
-
-// ── Main ─────────────────────────────────────────────────────────────────
 
 async function main() {
   console.log("Building tokencount CLI...\n");

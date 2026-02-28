@@ -51,16 +51,12 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
-// ── Pre-flight check ─────────────────────────────────────────────────────
-
 if (!fs.existsSync(CLI)) {
   console.error("Error: dist/tokencount.mjs not found. Run 'npm run build:cli' first.");
   process.exit(1);
 }
 
 console.log("CLI integration tests\n");
-
-// ── Tests ────────────────────────────────────────────────────────────────
 
 test("--help shows usage", () => {
   const out = run("--help");
@@ -161,8 +157,6 @@ test("empty stdin returns 0 tokens", () => {
   assert(count === 0, `expected 0 tokens, got ${count}`);
 });
 
-// ── Share mode ──────────────────────────────────────────────────────────
-
 test("--share with stdin prints URL with ?b= param", () => {
   const out = run("-s", { input: "Hello, world!" });
   assert(out.includes("?b="), "should contain ?b= query param");
@@ -209,8 +203,6 @@ test("--share respects TOKEN_COUNT_URL env var", () => {
   );
   assert(result.includes("http://localhost:8000/?b="), `expected custom base URL, got: ${result.trim()}`);
 });
-
-// ── Summary ──────────────────────────────────────────────────────────────
 
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

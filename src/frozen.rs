@@ -71,7 +71,7 @@ pub fn frozen_map_get_pair(table: &[u8], left: &[u8], right: &[u8]) -> Option<u3
     let mut idx = fast_reduce(h, num_slots);
     let expected_len = left.len() + 1 + right.len();
 
-    loop {
+    for _ in 0..num_slots {
         let slot_off = MAP_HEADER + idx * MAP_SLOT;
         let slot_hash = read_u64(table, slot_off);
         if slot_hash == 0 {
@@ -93,6 +93,7 @@ pub fn frozen_map_get_pair(table: &[u8], left: &[u8], right: &[u8]) -> Option<u3
         idx += 1;
         if idx == num_slots { idx = 0; }
     }
+    None
 }
 
 /// Look up the concatenation `a || b` in a frozen map without allocating.
@@ -106,7 +107,7 @@ pub fn frozen_map_get_concat(table: &[u8], a: &[u8], b: &[u8]) -> Option<u32> {
     let mut idx = fast_reduce(h, num_slots);
     let expected_len = a.len() + b.len();
 
-    loop {
+    for _ in 0..num_slots {
         let slot_off = MAP_HEADER + idx * MAP_SLOT;
         let slot_hash = read_u64(table, slot_off);
         if slot_hash == 0 {
@@ -125,6 +126,7 @@ pub fn frozen_map_get_concat(table: &[u8], a: &[u8], b: &[u8]) -> Option<u32> {
         idx += 1;
         if idx == num_slots { idx = 0; }
     }
+    None
 }
 
 #[inline]
@@ -134,7 +136,7 @@ pub fn frozen_set_contains(table: &[u8], key: &[u8]) -> bool {
     let h = fnv_hash(key);
     let mut idx = fast_reduce(h, num_slots);
 
-    loop {
+    for _ in 0..num_slots {
         let slot_off = SET_HEADER + idx * SET_SLOT;
         let slot_hash = read_u64(table, slot_off);
         if slot_hash == 0 {
@@ -151,6 +153,7 @@ pub fn frozen_set_contains(table: &[u8], key: &[u8]) -> bool {
         idx += 1;
         if idx == num_slots { idx = 0; }
     }
+    false
 }
 
 pub fn frozen_map_byte_len(table: &[u8]) -> usize {

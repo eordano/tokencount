@@ -2,10 +2,9 @@
 
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 
-Side-by-side text diff with token counts across 9 LLM tokenizers. No
-framework, no build step. Also ships as an offline single-file bundle and a CLI.
+Side-by-side text diff with token counts across 9 LLM tokenizers. Also ships as an offline single-file bundle and a very efficient CLI (<1ms boot).
 
-[Live demo at https://tokencount.eordano.com](https://tokencount.eordano.com)
+[Live at https://tokencount.eordano.com](https://tokencount.eordano.com)
 
 ![Compare mode with model dropdown, token overlay, diff summary, and word-level diff](docs/screenshot.png)
 

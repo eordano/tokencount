@@ -26,7 +26,7 @@ Models lazy-load on first use with a CJK-aware heuristic estimator while loading
 
 ## Usage
 
-Serve the directory with any static file server — no install required:
+Serve the directory with any static file server -- no install required:
 
 ```bash
 python3 -m http.server 8000
@@ -36,11 +36,11 @@ Or use the deployed instance: https://tokencount.eordano.com
 
 **Modes:** Single-panel token counting, or **Compare two texts** for side-by-side
 diffs with token deltas. **Token overlay** visualizes boundaries on your text.
-**Share** encodes both texts as zbase32 in the URL — no server needed.
+**Share** encodes both texts as zbase32 in the URL -- no server needed.
 
 ## CLI (Rust)
 
-Native binary with all 9 tokenizers implemented from scratch — no tokenizer
+Native binary with all 9 tokenizers implemented from scratch -- no tokenizer
 libraries, no runtime dependencies beyond the model data files.
 
 ```bash
@@ -69,7 +69,7 @@ dist/tokencount.mjs -a myfile.txt          # all models
 
 ## Offline Bundle
 
-Single self-contained HTML with all models inlined — works from `file:///`:
+Single self-contained HTML with all models inlined -- works from `file:///`:
 
 ```bash
 npm install && npm run build:offline
@@ -88,7 +88,7 @@ python3 -m http.server 8000
 
 ### Tests
 
-[Screenshot viewer](https://tokencount.eordano.com/tests/screenshots/viewer.html) — auto-captured from CI (desktop + mobile).
+[Screenshot viewer](https://tokencount.eordano.com/tests/screenshots/viewer.html) -- auto-captured from CI (desktop + mobile).
 
 ```bash
 npm install

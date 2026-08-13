@@ -20,7 +20,7 @@ src/claude.rs               Claude tokenizer (embedded double-array trie)
 src/bpe.rs                  HuggingFace BPE tokenizer (7 models, frozen hash tables)
 src/tiktoken.rs             OpenAI tiktoken tokenizer (o200k_base, frozen hash table)
 src/frozen.rs               Frozen hash table primitives (FNV-1a, map/set lookup)
-src/byte_level.rs           GPT-2 byte↔unicode mapping
+src/byte_level.rs           GPT-2 byte<->unicode mapping
 cli/tokencount.mjs          Node.js CLI: count tokens from files/stdin
 cli/lib/tokenizer.mjs       Node.js CLI tokenizer wrapper
 scripts/build-offline.mjs   Offline HTML bundle (esbuild)
@@ -32,6 +32,7 @@ playwright.bundle.config.js Offline bundle on :8001
 package.json                Playwright, esbuild, gpt-tokenizer, @huggingface/transformers
 flake.nix                   Nix dev shell + builds (vendored HF models, fetched OpenAI data)
 .github/workflows/          deploy, e2e, offline-bundle, preview
+.claude/skills/reduce-tokens/  Method for shrinking a codebase's token count
 ```
 
 ## Design
@@ -41,11 +42,11 @@ flake.nix                   Nix dev shell + builds (vendored HF models, fetched 
 - Responsive: CSS grid desktop, tab navigation mobile (<768px).
 - Token overlay: Visualization behind textarea. Debounced. Per-panel toggle.
 - Two modes: Single-panel token counting. Compare mode for diff + deltas.
-- URL sharing: JSON → UTF-8 → zbase32 → `?d=` param. No server.
-- Offline bundle: `scripts/build-offline.mjs` → single HTML with all models.
-- Node.js CLI: `cli/tokencount.mjs` — all 9 models. Build: `scripts/build-cli.mjs`.
-- Rust CLI: `src/main.rs` — all 9 models, no tokenizer libraries.
-- Nix: `flake.nix` — dev shells + builds, vendored HF models, fetched OpenAI data.
+- URL sharing: JSON -> UTF-8 -> zbase32 -> `?d=` param. No server.
+- Offline bundle: `scripts/build-offline.mjs` -> single HTML with all models.
+- Node.js CLI: `cli/tokencount.mjs` -- all 9 models. Build: `scripts/build-cli.mjs`.
+- Rust CLI: `src/main.rs` -- all 9 models, no tokenizer libraries.
+- Nix: `flake.nix` -- dev shells + builds, vendored HF models, fetched OpenAI data.
 
 ## Rust CLI
 
@@ -57,7 +58,7 @@ Three tokenizer backends, all from scratch (no tokenizer libraries):
 `build.rs` generates frozen hash tables (open-addressing, linear probing, 75%
 load factor) for all 8 non-Claude models and embeds them uncompressed via
 `include_bytes!`. At runtime, the data is referenced as `&'static [u8]`
-directly from the binary's `.rodata` section — zero-copy, demand-paged by the
+directly from the binary's `.rodata` section -- zero-copy, demand-paged by the
 OS, no allocation or decompression.
 
 `TOKEN_COUNT_MODELS` must be set at build time to embed model data. `nix develop`
@@ -68,11 +69,11 @@ Build: `cargo build --release` | `nix build .#tokencount`
 
 ## Run locally
 
-`python3 -m http.server 8000` — no install required.
+`python3 -m http.server 8000` -- no install required.
 
 ## Exports
 
-- `diff.js`: `computeDiff(textA, textB)` → `[{type, text}]`
+- `diff.js`: `computeDiff(textA, textB)` -> `[{type, text}]`
 - `tokenizer.js`: `MODEL_PROFILES`, `countTokens(text, name)`,
   `encodeTokens(text, name)`, `countAllTokenizers(text)`,
   `loadModel(name, onReady)`, `isReady(name)`, `getStatus(name)`
@@ -97,7 +98,7 @@ color, loader type). Also update: `cli/lib/tokenizer.mjs`,
 `flake.nix` model hashes + `repoToDir`, `src/main.rs` MODEL_NAMES,
 README.md model table.
 
-Change diff algorithm: Edit `js/diff.js` — `computeDiff` returns
+Change diff algorithm: Edit `js/diff.js` -- `computeDiff` returns
 `[{type: 'added'|'removed'|'unchanged', text}]`.
 
 Modify diff summary: `renderDiffSummary` and `renderDiffCard` in `js/app.js`.
@@ -108,7 +109,7 @@ Rust CLI will pick it up at next `cargo build`.
 
 Tests: `npx playwright test` | `npm run test:bundle` | `npm run test:cli`
 
-Build (Node.js CLI): `npm run build:offline` → `dist/tokencount.html` |
-`npm run build:cli` → `dist/tokencount.mjs` + `dist/models/`
+Build (Node.js CLI): `npm run build:offline` -> `dist/tokencount.html` |
+`npm run build:cli` -> `dist/tokencount.mjs` + `dist/models/`
 
 Build (Rust CLI): `cargo build --release` | `nix build .#tokencount`

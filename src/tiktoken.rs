@@ -3,7 +3,7 @@
 /// Uses a compile-time frozen hash table (built by build.rs) for rank lookup.
 /// The regex pattern for o200k_base is compiled from a constant.
 ///
-/// Tokenization: regex pre-tokenize → byte-level BPE using rank lookup.
+/// Tokenization: regex pre-tokenize -> byte-level BPE using rank lookup.
 /// BPE merges use a priority queue + linked-list skip structure for O(n log n).
 use crate::frozen;
 use std::cmp::Reverse;
@@ -118,14 +118,14 @@ impl TiktokenTokenizer {
             if k < n { prev[k] = i; }
             count -= 1;
 
-            // Re-evaluate the pair (prev[i], i) — left neighbor changed.
+            // Re-evaluate the pair (prev[i], i) -- left neighbor changed.
             if prev[i] != usize::MAX && alive[prev[i]] {
                 let p = prev[i];
                 if let Some(r) = pair_rank(p, &parts, &next) {
                     heap.push(Reverse((r, p, gen[p])));
                 }
             }
-            // Re-evaluate the pair (i, next[i]) — i's content changed.
+            // Re-evaluate the pair (i, next[i]) -- i's content changed.
             if next[i] < n {
                 if let Some(r) = pair_rank(i, &parts, &next) {
                     heap.push(Reverse((r, i, gen[i])));

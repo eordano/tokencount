@@ -3,12 +3,11 @@ import path from "node:path";
 import { execSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { loadModel, countTokens, MODEL_NAMES } from "./lib/tokenizer.mjs";
+import { resolveBaseUrl } from "./lib/base-url.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const VERSION = JSON.parse(fs.readFileSync(path.resolve(__dirname, "..", "package.json"), "utf8")).version;
-
-const DEFAULT_BASE_URL = "https://tokencount.eordano.com/";
 
 const HELP = `Usage: tokencount [options] [path...]
 
@@ -183,7 +182,7 @@ function buildShareUrl(textA, textB, model, tokens) {
   if (model && model !== "claude") obj.m = model;
   if (tokens) obj.t = tokens;
   const encoded = base64UrlEncode(Buffer.from(JSON.stringify(obj), "utf8"));
-  const base = process.env.TOKEN_COUNT_URL || DEFAULT_BASE_URL;
+  const base = resolveBaseUrl();
   return `${base.replace(/\/$/, "")}/?b=${encoded}`;
 }
 

@@ -167,7 +167,7 @@ function expandPaths(paths, recursive, useGitignore, ignorePatterns) {
         if (!matchesIgnore(f, p, ignorePatterns)) files.push(f);
       }
     } else if (stat.isFile()) {
-      files.push(p);
+      if (!isBinary(p)) files.push(p);
     }
   }
   return files;

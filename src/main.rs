@@ -332,7 +332,9 @@ fn expand_paths(
                 }
             }
         } else if path.is_file() {
-            files.push(path);
+            if !is_binary(&path) {
+                files.push(path);
+            }
         }
     }
     files
@@ -401,27 +403,27 @@ fn main() {
     }
 
     let inputs: Vec<Input> = if args.paths.is_empty() {
-        let mut buf = String::new();
-        io::stdin().read_to_string(&mut buf).unwrap_or_else(|e| {
+        let mut buf = Vec::new();
+        io::stdin().read_to_end(&mut buf).unwrap_or_else(|e| {
             eprintln!("Error reading stdin: {}", e);
             std::process::exit(1);
         });
         vec![Input {
             name: None,
-            text: buf,
+            text: String::from_utf8_lossy(&buf).into_owned(),
         }]
     } else {
         let files = expand_paths(&args.paths, args.recursive, args.gitignore, &args.ignore);
         files
             .into_iter()
             .map(|f| {
-                let text = fs::read_to_string(&f).unwrap_or_else(|e| {
+                let bytes = fs::read(&f).unwrap_or_else(|e| {
                     eprintln!("Error reading {}: {}", f.display(), e);
                     std::process::exit(1);
                 });
                 Input {
                     name: Some(f.to_string_lossy().to_string()),
-                    text,
+                    text: String::from_utf8_lossy(&bytes).into_owned(),
                 }
             })
             .collect()

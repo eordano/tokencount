@@ -2,8 +2,9 @@
 // Integration tests for the tokencount CLI
 // Run: npm run test:cli  (after npm run build:cli)
 
-import { execSync } from "node:child_process";
+import { execSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { DEFAULT_BASE_URL } from "../cli/lib/base-url.mjs";
@@ -196,6 +197,28 @@ test("--share with --model includes model in payload", () => {
   while (raw.length % 4) raw += "=";
   const obj = JSON.parse(Buffer.from(raw, "base64").toString("utf8"));
   assert(obj.m === "openai", `expected model 'openai', got '${obj.m}'`);
+});
+
+test("explicit binary file is silently skipped", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tokencount-"));
+  const bin = path.join(tmp, "blob.bin");
+  fs.writeFileSync(bin, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x0a, 0xff]));
+  const r = spawnSync("node", [CLI, bin], { cwd: ROOT, encoding: "utf8" });
+  fs.rmSync(tmp, { recursive: true, force: true });
+  assert(r.status === 0, `expected exit 0, got ${r.status}`);
+  assert(r.stderr === "", `stderr should be empty, got: ${r.stderr}`);
+  assert(!r.stdout.includes("blob.bin"), "should not count the binary file");
+});
+
+test("non-UTF-8 text file still counts", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tokencount-"));
+  const f = path.join(tmp, "latin1.txt");
+  fs.writeFileSync(f, Buffer.from([0x63, 0x61, 0x66, 0xe9, 0x0a])); // "café\n" in latin-1
+  const r = spawnSync("node", [CLI, f], { cwd: ROOT, encoding: "utf8" });
+  fs.rmSync(tmp, { recursive: true, force: true });
+  assert(r.status === 0, `expected exit 0, got ${r.status}: ${r.stderr}`);
+  const count = parseInt(r.stdout.trim().split(/\s+/)[0], 10);
+  assert(count > 0, `token count should be > 0, got ${count}`);
 });
 
 test("--share respects TOKEN_COUNT_URL env var", () => {

@@ -1,4 +1,4 @@
-/// Claude tokenizer — double-array trie, pre-built at compile time by build.rs.
+/// Claude tokenizer -- double-array trie, pre-built at compile time by build.rs.
 ///
 /// O(1) per byte: transition t = base[s] + byte, valid if (check[t] & MASK) == s.
 /// Terminal flag packed into bit 31 of check.

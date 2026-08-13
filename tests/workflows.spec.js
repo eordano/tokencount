@@ -557,7 +557,7 @@ test.describe("Cross-language tokenization", () => {
 });
 
 test.describe("Full desktop workflow", () => {
-  test("complete workflow: paste → visualize → compare → switch model → share", async ({
+  test("complete workflow: paste -> visualize -> compare -> switch model -> share", async ({
     page,
   }, testInfo) => {
     test.skip(isMobile(testInfo), "Desktop-only end-to-end");

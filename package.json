@@ -15,7 +15,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "gh-eordano:eordano/tokencount"
+    "url": "https://github.com/eordano/tokencount.git"
   },
   "keywords": [],
   "author": "",

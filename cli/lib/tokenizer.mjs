@@ -1,5 +1,5 @@
 // Node.js tokenizer module for CLI use
-// Loads tokenizer models from local filesystem — no network access.
+// Loads tokenizer models from local filesystem -- no network access.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -7,7 +7,7 @@ import { encode as gptEncode } from "gpt-tokenizer/encoding/o200k_base";
 import { AutoTokenizer, env } from "@huggingface/transformers";
 import { ClaudeTokenizer } from "../../js/claude-tokenizer.js";
 
-// Block all remote access — CLI is fully offline
+// Block all remote access -- CLI is fully offline
 env.allowLocalModels = true;
 env.allowRemoteModels = false;
 env.useBrowserCache = false;
@@ -35,7 +35,7 @@ export async function loadModel(name, modelsDir) {
   if (loaded[name]) return;
 
   if (name === "openai") {
-    // gpt-tokenizer has encoding data built in — nothing to load
+    // gpt-tokenizer has encoding data built in -- nothing to load
     loaded[name] = { type: "gpt" };
     return;
   }

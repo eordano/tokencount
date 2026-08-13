@@ -233,8 +233,8 @@ impl HfTokenizer {
 
         // Lay out all initial tokens contiguously in a byte buffer so that
         // adjacent tokens in the linked list are adjacent in memory.  Merging
-        // two neighbors then becomes a zero-copy range extension — no format!
-        // allocation — matching the pattern used in tiktoken.rs.
+        // two neighbors then becomes a zero-copy range extension -- no format!
+        // allocation -- matching the pattern used in tiktoken.rs.
         let total_bytes: usize = initial.iter().map(|s| s.len()).sum();
         let mut buf = Vec::with_capacity(total_bytes);
         let mut parts: Vec<(usize, usize)> = Vec::with_capacity(n);

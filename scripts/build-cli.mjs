@@ -73,7 +73,7 @@ async function copyModels() {
       fs.mkdirSync(outDir, { recursive: true });
       for (const file of HF_FILES) {
         const src = path.join(modelsDir, repo, file);
-        console.log(`  Copying ${repo}/${file} → models/${dir}/${file}`);
+        console.log(`  Copying ${repo}/${file} -> models/${dir}/${file}`);
         fs.copyFileSync(src, path.join(outDir, file));
       }
     }

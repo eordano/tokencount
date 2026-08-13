@@ -19,7 +19,7 @@ fn fnv_hash(data: &[u8]) -> u64 {
         h ^= b as u64;
         h = h.wrapping_mul(FNV_PRIME);
     }
-    h | 1 // never zero — 0 is the empty-slot sentinel
+    h | 1 // never zero -- 0 is the empty-slot sentinel
 }
 
 fn main() {
@@ -494,7 +494,7 @@ fn read_u64_le(data: &[u8], off: usize) -> u64 {
 }
 
 /// Lemire fast range reduction: maps a u64 hash into [0, n) via
-/// fixed-point multiply — one `mul` + shift, no division.
+/// fixed-point multiply -- one `mul` + shift, no division.
 fn fast_reduce(h: u64, n: usize) -> usize {
     ((h as u128).wrapping_mul(n as u128) >> 64) as usize
 }

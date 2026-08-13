@@ -6,10 +6,12 @@ import { execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { DEFAULT_BASE_URL } from "../cli/lib/base-url.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const ROOT = path.resolve(path.dirname(__filename), "..");
 const CLI = path.join(ROOT, "dist", "tokencount.mjs");
+const DEFAULT_BASE_HOST = new URL(DEFAULT_BASE_URL).host;
 
 let passed = 0;
 let failed = 0;
@@ -160,7 +162,7 @@ test("empty stdin returns 0 tokens", () => {
 test("--share with stdin prints URL with ?b= param", () => {
   const out = run("-s", { input: "Hello, world!" });
   assert(out.includes("?b="), "should contain ?b= query param");
-  assert(out.includes("eordano.com"), "should use default base URL");
+  assert(out.includes(DEFAULT_BASE_HOST), "should use default base URL");
 });
 
 test("--share with two files prints URL and comparison to stderr", () => {

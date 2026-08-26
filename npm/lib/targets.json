@@ -1,0 +1,45 @@
+{
+  "scope": "@tokencount",
+  "targets": [
+    {
+      "rustTarget": "x86_64-unknown-linux-musl",
+      "package": "@tokencount/linux-x64",
+      "os": "linux",
+      "cpu": "x64",
+      "archive": "tar.gz",
+      "binary": "tokencount"
+    },
+    {
+      "rustTarget": "aarch64-unknown-linux-musl",
+      "package": "@tokencount/linux-arm64",
+      "os": "linux",
+      "cpu": "arm64",
+      "archive": "tar.gz",
+      "binary": "tokencount"
+    },
+    {
+      "rustTarget": "x86_64-apple-darwin",
+      "package": "@tokencount/darwin-x64",
+      "os": "darwin",
+      "cpu": "x64",
+      "archive": "tar.gz",
+      "binary": "tokencount"
+    },
+    {
+      "rustTarget": "aarch64-apple-darwin",
+      "package": "@tokencount/darwin-arm64",
+      "os": "darwin",
+      "cpu": "arm64",
+      "archive": "tar.gz",
+      "binary": "tokencount"
+    },
+    {
+      "rustTarget": "x86_64-pc-windows-msvc",
+      "package": "@tokencount/win32-x64",
+      "os": "win32",
+      "cpu": "x64",
+      "archive": "zip",
+      "binary": "tokencount.exe"
+    }
+  ]
+}

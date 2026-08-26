@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 use std::env;
+use std::fmt::Write as _;
 use std::fs;
 use std::path::Path;
 
@@ -25,12 +26,13 @@ fn fnv_hash(data: &[u8]) -> u64 {
 fn main() {
     println!("cargo:rerun-if-changed=data/claude-vocab.json");
     println!("cargo:rerun-if-env-changed=TOKEN_COUNT_MODELS");
+    println!("cargo:rerun-if-env-changed=TOKENCOUNT_ALLOW_PARTIAL");
 
     let out_dir = env::var("OUT_DIR").unwrap();
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
 
     build_claude_trie(&manifest_dir, &out_dir);
-    build_frozen_models(&out_dir);
+    build_frozen_models(&manifest_dir, &out_dir);
 }
 
 fn build_claude_trie(manifest_dir: &str, out_dir: &str) {
@@ -156,68 +158,212 @@ fn find_base(keys: &[u8], occupied: &[bool]) -> usize {
     }
 }
 
-const HF_MODELS: &[&str] = &[
-    "gemini", "deepseek", "qwen", "llama", "mistral", "grok", "minimax",
+/// OpenAI's published `o200k_base` rank table -- the source of the `openai`
+/// tokenizer. Not redistributed here; the build reads it from
+/// `$TOKEN_COUNT_MODELS/o200k_base.tiktoken`.
+const O200K_URL: &str = "https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken";
+
+/// HuggingFace tokenizer sources as `(embedded name, upstream repo)`.
+///
+/// The embedded name is both the Rust const in `embedded_models.rs` and the
+/// subdirectory the build looks in: `$TOKEN_COUNT_MODELS/<name>/tokenizer.json`.
+/// Must stay in sync with `repoToDir` in flake.nix, which fetches each repo at
+/// a pinned hash and points `TOKEN_COUNT_MODELS` at the assembled directory.
+const HF_MODELS: &[(&str, &str)] = &[
+    ("gemini", "Xenova/gemma-2-tokenizer"),
+    ("deepseek", "deepseek-ai/DeepSeek-V3"),
+    ("qwen", "Qwen/Qwen3-0.6B"),
+    ("llama", "Xenova/llama4-tokenizer"),
+    ("mistral", "mistralai/Mistral-Nemo-Instruct-2407"),
+    ("grok", "Xenova/grok-1-tokenizer"),
+    ("minimax", "MiniMaxAI/MiniMax-Text-01"),
 ];
 
-fn build_frozen_models(out_dir: &str) {
-    let models_dir = env::var("TOKEN_COUNT_MODELS").ok();
+/// A tokenizer table the build wanted but could not find.
+struct Missing {
+    /// Path relative to `$TOKEN_COUNT_MODELS`.
+    rel: String,
+    /// Where to obtain it.
+    url: String,
+}
+
+/// Whether the caller explicitly asked for a degraded, Claude-only binary.
+///
+/// Without this, a build with no model data is a hard error: silently shipping
+/// a binary that advertises 9 tokenizers and supports 1 is worse than not
+/// building at all.
+fn allow_partial() -> bool {
+    match env::var("TOKENCOUNT_ALLOW_PARTIAL") {
+        Ok(v) => {
+            let v = v.trim();
+            !v.is_empty() && !v.eq_ignore_ascii_case("0") && !v.eq_ignore_ascii_case("false")
+        }
+        Err(_) => false,
+    }
+}
+
+/// A `concat!(env!("OUT_DIR"), "/<name>")` expression for the generated source.
+///
+/// The generated file is `include!`d into the crate, so an interpolated
+/// `OUT_DIR` would be re-parsed by rustc as a Rust string literal: on Windows
+/// the path is `D:\a\tokencount\...`, and `\a` / `\b` are unknown escapes
+/// while `\t` / `\r` are valid ones that silently corrupt the path. Letting
+/// `env!` supply the directory at compile time sidesteps escaping entirely,
+/// and matches how `src/claude.rs` reaches `trie.bin`.
+fn out_dir_literal(file_name: &str) -> String {
+    format!("concat!(env!(\"OUT_DIR\"), \"/{}\")", file_name)
+}
+
+fn build_frozen_models(manifest_dir: &str, out_dir: &str) {
+    let models_dir = env::var("TOKEN_COUNT_MODELS")
+        .ok()
+        .filter(|d| !d.trim().is_empty());
 
     let out = Path::new(out_dir);
     let mut codegen = String::new();
+    let mut missing: Vec<Missing> = Vec::new();
+    let mut embedded: Vec<&str> = vec!["claude"];
 
-    if let Some(ref dir) = models_dir {
-        let models_path = Path::new(dir);
+    // A relative TOKEN_COUNT_MODELS is resolved against the crate root, not
+    // against whatever directory cargo happened to run the build script in.
+    let models_path = models_dir.as_deref().map(|d| {
+        let p = Path::new(d);
+        if p.is_absolute() {
+            p.to_path_buf()
+        } else {
+            Path::new(manifest_dir).join(p)
+        }
+    });
+    let models_path = models_path.as_deref();
 
-        // Tiktoken (OpenAI o200k_base)
-        let tiktoken_path = models_path.join("o200k_base.tiktoken");
-        if tiktoken_path.exists() {
-            let blob = build_tiktoken_frozen(&tiktoken_path);
+    // Tiktoken (OpenAI o200k_base)
+    let tiktoken_path = models_path.map(|d| d.join("o200k_base.tiktoken"));
+    match tiktoken_path.filter(|p| p.exists()) {
+        Some(path) => {
+            println!("cargo:rerun-if-changed={}", path.display());
+            let blob = build_tiktoken_frozen(&path);
             let dest = out.join("o200k_frozen.bin");
             fs::write(&dest, &blob).expect("Failed to write o200k_frozen.bin");
             codegen.push_str(&format!(
-                "pub const O200K: Option<&[u8]> = Some(include_bytes!(\"{}\"));\n",
-                dest.display()
+                "pub const O200K: Option<&[u8]> = Some(include_bytes!({}));\n",
+                out_dir_literal("o200k_frozen.bin")
             ));
-        } else {
+            embedded.push("openai");
+        }
+        None => {
             codegen.push_str("pub const O200K: Option<&[u8]> = None;\n");
-        }
-
-        // HF BPE models
-        for &model in HF_MODELS {
-            let const_name = model.to_uppercase();
-            let tokenizer_path = models_path.join(model).join("tokenizer.json");
-            if tokenizer_path.exists() {
-                let blob = build_hf_frozen(&tokenizer_path);
-                let filename = format!("{}_frozen.bin", model);
-                let dest = out.join(&filename);
-                fs::write(&dest, &blob).unwrap_or_else(|e| {
-                    panic!("Failed to write {}: {}", filename, e)
-                });
-                codegen.push_str(&format!(
-                    "pub const {}: Option<&[u8]> = Some(include_bytes!(\"{}\"));\n",
-                    const_name,
-                    dest.display()
-                ));
-            } else {
-                codegen.push_str(&format!(
-                    "pub const {}: Option<&[u8]> = None;\n",
-                    const_name
-                ));
-            }
-        }
-    } else {
-        codegen.push_str("pub const O200K: Option<&[u8]> = None;\n");
-        for &model in HF_MODELS {
-            codegen.push_str(&format!(
-                "pub const {}: Option<&[u8]> = None;\n",
-                model.to_uppercase()
-            ));
+            missing.push(Missing {
+                rel: "o200k_base.tiktoken".to_string(),
+                url: O200K_URL.to_string(),
+            });
         }
     }
 
+    // HF BPE models
+    for &(model, repo) in HF_MODELS {
+        let const_name = model.to_uppercase();
+        let tokenizer_path = models_path.map(|d| d.join(model).join("tokenizer.json"));
+        match tokenizer_path.filter(|p| p.exists()) {
+            Some(path) => {
+                println!("cargo:rerun-if-changed={}", path.display());
+                let blob = build_hf_frozen(&path);
+                let filename = format!("{}_frozen.bin", model);
+                let dest = out.join(&filename);
+                fs::write(&dest, &blob)
+                    .unwrap_or_else(|e| panic!("Failed to write {}: {}", filename, e));
+                codegen.push_str(&format!(
+                    "pub const {}: Option<&[u8]> = Some(include_bytes!({}));\n",
+                    const_name,
+                    out_dir_literal(&filename)
+                ));
+                embedded.push(model);
+            }
+            None => {
+                codegen.push_str(&format!("pub const {}: Option<&[u8]> = None;\n", const_name));
+                missing.push(Missing {
+                    rel: format!("{}/tokenizer.json", model),
+                    url: format!("https://huggingface.co/{}/resolve/main/tokenizer.json", repo),
+                });
+            }
+        }
+    }
+
+    if !missing.is_empty() {
+        if !allow_partial() {
+            panic!("{}", missing_models_error(models_dir.as_deref(), &missing));
+        }
+        println!(
+            "cargo:warning=TOKENCOUNT_ALLOW_PARTIAL is set: building a partial binary with \
+             {}/9 tokenizers ({}). The other {} exit with an error at runtime.",
+            embedded.len(),
+            embedded.join(", "),
+            missing.len()
+        );
+    }
+
+    codegen.push_str(&format!(
+        "#[allow(dead_code)]\npub const EMBEDDED_MODELS: &[&str] = &{:?};\n",
+        embedded
+    ));
+
     let dest = Path::new(out_dir).join("embedded_models.rs");
     fs::write(&dest, &codegen).expect("Failed to write embedded_models.rs");
+}
+
+/// The message a modelless build dies with.
+///
+/// It has to be enough on its own: the reader is looking at a `cargo install`
+/// or `cargo build` failure with no other context.
+fn missing_models_error(models_dir: Option<&str>, missing: &[Missing]) -> String {
+    let mut m = String::new();
+
+    m.push_str("\n\ntokencount was built without its tokenizer tables.\n\n");
+    match models_dir {
+        Some(dir) => {
+            let _ = writeln!(m, "  TOKEN_COUNT_MODELS={dir}");
+            let _ = writeln!(m, "  ...is set, but {} file(s) are missing:\n", missing.len());
+        }
+        None => {
+            m.push_str("  TOKEN_COUNT_MODELS is not set, so none of the following were found:\n\n");
+        }
+    }
+    for entry in missing {
+        let _ = writeln!(m, "    {}", entry.rel);
+        let _ = writeln!(m, "      <- {}", entry.url);
+    }
+
+    m.push_str(
+        r#"
+All 9 tokenizer tables are compiled into the binary -- tokencount has no runtime
+data files. Only the Claude table ships in this repository (data/claude-vocab.json).
+The other 8 belong to model vendors under terms tokencount cannot redistribute,
+so the build reads them from a directory you provide.
+
+Pick one:
+
+  1. Do not build. Install a prebuilt, provenance-attested binary:
+
+       https://github.com/eordano/tokencount/releases
+       cargo binstall --git https://github.com/eordano/tokencount tokencount
+
+  2. Build with Nix, which fetches every file above at a pinned hash:
+
+       nix build github:eordano/tokencount
+
+  3. Fetch the files yourself into a directory laid out exactly as listed
+     above, then point the build at it:
+
+       TOKEN_COUNT_MODELS=/path/to/models cargo build --release --locked
+
+  4. Deliberately build a reduced binary. The models listed above are then
+     absent, and exit with an error when selected at runtime:
+
+       TOKENCOUNT_ALLOW_PARTIAL=1 cargo build --release --locked
+
+"#,
+    );
+
+    m
 }
 
 fn build_tiktoken_frozen(path: &Path) -> Vec<u8> {

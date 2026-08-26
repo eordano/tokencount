@@ -1,0 +1,39 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.12.0.schema.json
+
+PackageIdentifier: eordano.tokencount
+PackageVersion: 1.0.1
+PackageLocale: en-US
+Publisher: Esteban Ordano
+PublisherUrl: https://github.com/eordano
+PublisherSupportUrl: https://github.com/eordano/tokencount/issues
+Author: Esteban Ordano
+PackageName: tokencount
+PackageUrl: https://github.com/eordano/tokencount
+License: AGPL-3.0-only
+LicenseUrl: https://github.com/eordano/tokencount/blob/main/LICENSE
+Copyright: Copyright (c) Esteban Ordano
+CopyrightUrl: https://github.com/eordano/tokencount/blob/main/LICENSE
+ShortDescription: Lightning-fast offline token counter for 9 LLM tokenizers
+Description: |-
+  tokencount counts tokens in files or on stdin using the tokenizers of nine LLM
+  families -- Claude, OpenAI, Gemini, DeepSeek, Qwen, MiniMax, Llama, Mistral and
+  Grok. All nine tokenizer tables are compiled into the executable, so it runs
+  fully offline with no runtime data files, no network access and sub-millisecond
+  startup. It can count a single file, recurse a directory tree while honouring
+  .gitignore, compare every model at once, or print a shareable URL that opens
+  the same text in the tokencount web app.
+Moniker: tokencount
+Tags:
+- cli
+- gpt
+- llm
+- offline
+- rust
+- token-counter
+- tokenizer
+ReleaseNotesUrl: https://github.com/eordano/tokencount/releases/tag/v1.0.1
+Documentations:
+- DocumentLabel: README
+  DocumentUrl: https://github.com/eordano/tokencount/blob/main/README.md
+ManifestType: defaultLocale
+ManifestVersion: 1.12.0

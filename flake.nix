@@ -1,10 +1,17 @@
 {
   description = "Token Diff Estimator -- dev shell & E2E test runner with CJK fonts";
 
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    crane.url = "github:ipetkov/crane";
+  };
 
   outputs =
-    { self, nixpkgs }:
+    {
+      self,
+      nixpkgs,
+      crane,
+    }:
     let
       supportedSystems = [
         "x86_64-linux"
@@ -29,10 +36,6 @@
           ];
         };
 
-      # Shared shell snippet: reinstall node_modules when package.json
-      # changes or the Node.js version differs from the last install.
-      # Uses `npm ci` (clean install) on version mismatch to rebuild
-      # native addons like esbuild for the current Node ABI.
       ensureNodeModules = ''
         node_ver="$(node --version)"
         marker="node_modules/.node-version"
@@ -76,7 +79,6 @@
           // extra
         );
 
-      # esbuild 0.27.3 built from source (matches package-lock.json)
       esbuild_0_27_3 =
         { pkgs }:
         pkgs.buildGoModule rec {
@@ -96,8 +98,6 @@
           ];
         };
 
-      # Pre-fetched HuggingFace tokenizer model data for offline bundling.
-      # Must stay in sync with HF_REPOS in scripts/build-offline.mjs.
       hfModels =
         { pkgs }:
         let
@@ -170,9 +170,6 @@
         "Xenova/grok-1-tokenizer" = "grok";
       };
 
-      # Assembled model directory for the Rust CLI: o200k_base.tiktoken +
-      # {model}/tokenizer.json for each HF model.  Shared between the
-      # dev shell (TOKEN_COUNT_MODELS env) and the release package.
       rustModelsDir =
         { pkgs }:
         let
@@ -245,28 +242,43 @@
           }
         )
         // {
-          tokencount = pkgs.pkgsStatic.rustPlatform.buildRustPackage {
-            pname = "tokencount";
-            version = cargoVersion;
-            src = pkgs.lib.cleanSourceWith {
-              src = self;
-              filter =
-                path: type:
-                let
-                  base = builtins.baseNameOf path;
-                  p = toString path;
-                in
-                base == "Cargo.toml"
-                || base == "Cargo.lock"
-                || base == "build.rs"
-                || base == "src"
-                || nixpkgs.lib.hasInfix "/src/" p
-                || base == "data"
-                || nixpkgs.lib.hasInfix "/data/" p;
-            };
-            cargoLock.lockFile = ./Cargo.lock;
-            env.TOKEN_COUNT_MODELS = rustModelsDir { inherit pkgs; };
-          };
+          tokencount =
+            let
+              craneLib = crane.mkLib pkgs.pkgsStatic;
+
+              commonArgs = {
+                pname = "tokencount";
+                version = cargoVersion;
+                doCheck = false;
+                strictDeps = true;
+                src = pkgs.lib.cleanSourceWith {
+                  src = self;
+                  filter =
+                    path: type:
+                    let
+                      base = builtins.baseNameOf path;
+                      p = toString path;
+                    in
+                    base == "Cargo.toml"
+                    || base == "Cargo.lock"
+                    || base == "build.rs"
+                    || base == "src"
+                    || nixpkgs.lib.hasInfix "/src/" p
+                    || base == "data"
+                    || nixpkgs.lib.hasInfix "/data/" p;
+                };
+
+                cargoLock = ./Cargo.lock;
+              };
+            in
+            craneLib.buildPackage (
+              commonArgs
+              // {
+                cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+
+                env.TOKEN_COUNT_MODELS = rustModelsDir { inherit pkgs; };
+              }
+            );
 
           tokencount-js =
             let

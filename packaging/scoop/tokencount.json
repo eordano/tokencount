@@ -1,0 +1,57 @@
+{
+    "##": [
+        "Scoop manifest for the eordano/scoop-bucket bucket.",
+        "  scoop bucket add eordano https://github.com/eordano/scoop-bucket",
+        "  scoop install eordano/tokencount",
+        "",
+        "The hash here is a placeholder: this file is a template, and a release's",
+        "digests do not exist until it is built. The Release workflow renders a",
+        "filled-in copy into its 'packaging-manifests' artifact --",
+        "  node scripts/build-packaging-manifests.mjs --sums dist/SHA256SUMS",
+        "-- and after the first publish Scoop's own autoupdate takes over: run",
+        "'bin/checkver.ps1 tokencount -u' in the bucket checkout, which follows",
+        "checkver to the newest release and pulls the digest out of SHA256SUMS.",
+        "Never paste a hash by hand.",
+        "",
+        "The executable links the CRT statically (-C target-feature=+crt-static in",
+        "the release workflow), so no Visual C++ redistributable is needed.",
+        "",
+        "Only x64 is published. Windows 11 on ARM runs the x64 build under",
+        "emulation, but Scoop will not install a 64bit-only manifest on an arm64",
+        "host, so ARM users should take packaging/install.ps1 instead."
+    ],
+    "$schema": "https://raw.githubusercontent.com/ScoopInstaller/Scoop/master/schema.json",
+    "version": "1.0.1",
+    "description": "Lightning-fast offline token counter for 9 LLM tokenizers",
+    "homepage": "https://github.com/eordano/tokencount",
+    "license": {
+        "identifier": "AGPL-3.0-only",
+        "url": "https://github.com/eordano/tokencount/blob/main/LICENSE"
+    },
+    "architecture": {
+        "64bit": {
+            "url": "https://github.com/eordano/tokencount/releases/download/v1.0.1/tokencount-1.0.1-x86_64-pc-windows-msvc.zip",
+            "hash": "0000000000000000000000000000000000000000000000000000000000000000"
+        }
+    },
+    "bin": "tokencount.exe",
+    "checkver": {
+        "github": "https://github.com/eordano/tokencount"
+    },
+    "autoupdate": {
+        "architecture": {
+            "64bit": {
+                "url": "https://github.com/eordano/tokencount/releases/download/v$version/tokencount-$version-x86_64-pc-windows-msvc.zip"
+            }
+        },
+        "hash": {
+            "url": "$baseurl/SHA256SUMS",
+            "regex": "([a-fA-F0-9]{64})\\s+\\*?$basename"
+        }
+    },
+    "notes": [
+        "tokencount is a single self-contained executable -- all nine tokenizer",
+        "tables are compiled into it, so there are no runtime data files.",
+        "Run 'tokencount --help' to get started."
+    ]
+}

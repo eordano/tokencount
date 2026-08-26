@@ -1,0 +1,475 @@
+name: Release
+
+# Cross-platform release for the native Rust CLI.
+#
+# Tag push (v*) -> builds the five supported targets, packages them under the
+# cargo-binstall default naming convention, attests build provenance, and
+# attaches everything to a DRAFT GitHub Release. A human publishes the draft,
+# which fires `release: published` and lets offline-bundle.yml append the Node
+# CLI and offline HTML assets and npm-publish.yml ship the npm packages.
+#
+# ORDER MATTERS. Push the tag first and let this workflow finish, THEN publish
+# the draft it created. Creating a release from the GitHub UI with a brand new
+# tag fires `push: tags` and `release: published` at the same instant, and
+# npm-publish.yml then sits waiting for archives that are still building.
+# RELEASE-PACKAGING.md has the runbook.
+#
+# No third-party actions beyond attest-build-provenance, no cargo cache, no
+# stored registry tokens: every release binary is built from a clean checkout
+# with --locked, and the only credential in play is the run-scoped GITHUB_TOKEN
+# plus OIDC for attestation.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build and attach assets to (e.g. v1.0.1). Empty = dry run, workflow artifacts only."
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  prepare:
+    name: Resolve version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.ref.outputs.tag }}
+      ref: ${{ steps.ref.outputs.ref }}
+      publish: ${{ steps.ref.outputs.publish }}
+    steps:
+      - name: Resolve ref to build
+        id: ref
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            tag="${GITHUB_REF#refs/tags/}"
+            publish=true
+          elif [ -n "$INPUT_TAG" ]; then
+            tag="$INPUT_TAG"
+            publish=true
+          else
+            tag=""
+            publish=false
+          fi
+          {
+            echo "tag=$tag"
+            echo "ref=${tag:-$GITHUB_SHA}"
+            echo "publish=$publish"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ steps.ref.outputs.ref }}
+          persist-credentials: false
+
+      # --locked is what the five build jobs use, so check it here: a Cargo.toml
+      # bumped without Cargo.lock otherwise fails all five, after the tag is
+      # already public. `cargo metadata` without --locked would silently refresh
+      # the lock in this checkout and hide the drift.
+      - name: Read crate version and check it against the tag
+        id: version
+        env:
+          TAG: ${{ steps.ref.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if ! meta="$(cargo metadata --locked --format-version 1 --no-deps 2>&1)"; then
+            echo "$meta"
+            echo "::error::Cargo.lock is out of date for this Cargo.toml. Run 'node scripts/build-npm-packages.mjs --root-only --stamp' (or 'cargo check') and commit the lock before tagging."
+            exit 1
+          fi
+          version="$(printf '%s' "$meta" | jq -r '.packages[] | select(.name == "tokencount") | .version')"
+          if [ -z "$version" ] || [ "$version" = "null" ]; then
+            echo "::error::could not read the tokencount version from Cargo.toml"
+            exit 1
+          fi
+          if [ -n "$TAG" ] && [ "$TAG" != "v$version" ]; then
+            echo "::error::tag $TAG does not match Cargo.toml version $version (expected tag v$version)"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Building tokencount $version" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Check the version-stamped files agree
+        run: |
+          set -euo pipefail
+          node scripts/build-npm-packages.mjs --check
+          node scripts/build-packaging-manifests.mjs --check
+          node scripts/fetch-models.mjs --verify-pins
+
+  build:
+    name: ${{ matrix.target }}
+    needs: prepare
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # musl, not gnu: the release binaries have to run on any distro,
+          # including ones older than the runner's glibc. The crate has no C
+          # dependencies (serde_json, fancy-regex, base64, unicode-normalization),
+          # so rustup's self-contained musl linking is enough -- no cross-rs,
+          # no container, no third-party action in the supply chain. The
+          # "statically linked" assertion below is what actually guarantees it.
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-24.04
+            archive: tar.gz
+            can_run: true
+          # Native arm64 Linux runner rather than a cross toolchain, so the
+          # binary is also smoke tested on the architecture it ships for.
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-24.04-arm
+            archive: tar.gz
+            can_run: true
+          # macos-latest is arm64, so this one is a cross-compile. Pure Rust,
+          # one universal SDK, no C deps -- it links fine, it just cannot be
+          # executed here, which is why the embedded-model check below does not
+          # depend on running the binary.
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            archive: tar.gz
+            can_run: false
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            archive: tar.gz
+            can_run: true
+          # crt-static: rustc links the MSVC CRT dynamically by default, which
+          # would make tokencount.exe need VCRUNTIME140.dll -- shipped by the
+          # Visual C++ redistributable, present on this runner but NOT on a
+          # clean Windows install. Every doc and manifest promises a single
+          # self-contained executable, so link it statically and assert it.
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            archive: zip
+            exe: .exe
+            can_run: true
+            rustflags: "-C target-feature=+crt-static"
+    env:
+      # Relative on purpose: cargo runs build.rs with the package root as its
+      # working directory, and a relative path avoids Windows backslashes.
+      TOKEN_COUNT_MODELS: models
+      RUSTFLAGS: ${{ matrix.rustflags }}
+      PKG: tokencount-${{ needs.prepare.outputs.version }}-${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ needs.prepare.outputs.ref }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+
+      - name: Install Rust toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup update --no-self-update stable
+          rustup default stable
+          rustup target add "${{ matrix.target }}"
+          rustc -vV
+
+      # 8 of the 9 tokenizer tables are vendor files the repo does not carry,
+      # and build.rs compiles in whatever it finds under TOKEN_COUNT_MODELS.
+      # fetch-models.mjs pins each one by sha256 and cross-checks those pins
+      # against flake.nix, so an upstream file that moves fails the release
+      # instead of quietly changing what ships. No HuggingFace token needed.
+      - name: Fetch tokenizer model data
+        shell: bash
+        run: node scripts/fetch-models.mjs "$TOKEN_COUNT_MODELS"
+
+      - name: Verify model data is complete
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=0
+          for f in o200k_base.tiktoken \
+                   gemini/tokenizer.json deepseek/tokenizer.json qwen/tokenizer.json \
+                   llama/tokenizer.json mistral/tokenizer.json grok/tokenizer.json \
+                   minimax/tokenizer.json; do
+            if [ ! -s "models/$f" ]; then
+              echo "::error::missing or empty model file: models/$f"
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ]
+
+      - name: Build
+        shell: bash
+        run: cargo build --release --locked --target "${{ matrix.target }}"
+
+      # The authoritative check that this is not a Claude-only binary: build.rs
+      # writes one `Some(include_bytes!(...))` per embedded table into OUT_DIR.
+      # Works for cross-compiled targets too, since it inspects the build
+      # output rather than running the binary.
+      - name: Verify all 9 tokenizers are embedded
+        shell: bash
+        run: |
+          set -euo pipefail
+          gen="$(find "target/${{ matrix.target }}/release/build" -maxdepth 3 -name embedded_models.rs -print -quit)"
+          if [ -z "$gen" ]; then
+            echo "::error::build.rs did not emit embedded_models.rs"
+            exit 1
+          fi
+          cat "$gen"
+          if grep -q 'None;' "$gen"; then
+            echo "::error::partial build -- at least one tokenizer table was not embedded"
+            exit 1
+          fi
+          embedded="$(grep -c 'Some(include_bytes!' "$gen" || true)"
+          if [ "$embedded" -ne 8 ]; then
+            echo "::error::expected 8 embedded tables (openai + 7 HF models), found $embedded"
+            exit 1
+          fi
+
+      - name: Verify the musl binary is static
+        if: endsWith(matrix.target, '-linux-musl')
+        run: |
+          set -euo pipefail
+          bin="target/${{ matrix.target }}/release/tokencount"
+          file "$bin"
+          # rustc links musl targets as static-pie, which `file` labels
+          # "static-pie linked" rather than "statically linked".
+          file "$bin" | grep -Eq "static-pie linked|statically linked"
+
+      # A clean Windows install has the UCRT in-box but not VCRUNTIME140.dll.
+      # crt-static removes the import entirely; if the flag ever stops being
+      # applied, the DLL name reappears in the import table and this fails --
+      # on the runner, rather than on a user's machine.
+      - name: Verify the Windows binary needs no VC++ redistributable
+        if: matrix.target == 'x86_64-pc-windows-msvc'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $exe = "target/${{ matrix.target }}/release/tokencount.exe"
+          $bytes = [System.IO.File]::ReadAllBytes($exe)
+          $ascii = [System.Text.Encoding]::ASCII.GetString($bytes)
+          foreach ($dll in @('VCRUNTIME140.dll', 'VCRUNTIME140_1.dll', 'MSVCP140.dll')) {
+            if ($ascii.IndexOf($dll, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+              Write-Output "::error::$exe imports $dll -- the CRT was not linked statically"
+              exit 1
+            }
+          }
+          Write-Output "no Visual C++ redistributable DLL imports"
+
+      - name: Smoke test
+        if: matrix.can_run
+        shell: bash
+        run: |
+          set -euo pipefail
+          bin="target/${{ matrix.target }}/release/tokencount${{ matrix.exe }}"
+          "$bin" --version
+          out="$(printf 'hello world' | "$bin" --all)"
+          echo "$out"
+          for m in claude openai gemini deepseek qwen llama mistral grok minimax; do
+            echo "$out" | grep -q "($m)"
+          done
+          [ "$(printf '%s\n' "$out" | grep -c '(')" -eq 9 ]
+
+      - name: Package (tar.gz)
+        if: matrix.archive == 'tar.gz'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p staging dist
+          cp "target/${{ matrix.target }}/release/tokencount" staging/
+          cp LICENSE README.md staging/
+          # COPYFILE_DISABLE keeps bsdtar on macOS from adding ._ AppleDouble entries.
+          COPYFILE_DISABLE=1 tar -czf "dist/$PKG.tar.gz" -C staging tokencount LICENSE README.md
+          tar -tzf "dist/$PKG.tar.gz"
+
+      - name: Package (zip)
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          New-Item -ItemType Directory -Force -Path staging, dist | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/tokencount.exe" staging/
+          Copy-Item LICENSE, README.md staging/
+          Compress-Archive -Path staging/* -DestinationPath "dist/$env:PKG.zip" -Force
+          Get-ChildItem dist
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-asset-${{ matrix.target }}
+          path: dist/tokencount-${{ needs.prepare.outputs.version }}-${{ matrix.target }}.${{ matrix.archive }}
+          if-no-files-found: error
+          retention-days: 7
+
+  # Deliberately separate from `publish`: a dry run needs the checksums but
+  # nothing here needs to write to the repository or mint an OIDC token, and a
+  # permission grant can only be narrowed per job, never per step.
+  checksums:
+    name: Checksums
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: release-asset-*
+          merge-multiple: true
+          path: dist
+
+      - name: Check the asset set and generate SHA256SUMS
+        working-directory: dist
+        run: |
+          set -euo pipefail
+          expected=5
+          found="$(find . -maxdepth 1 -name 'tokencount-*' -type f | wc -l)"
+          if [ "$found" -ne "$expected" ]; then
+            echo "::error::expected $expected release archives, found $found"
+            ls -l
+            exit 1
+          fi
+          sha256sum tokencount-* > SHA256SUMS
+          cat SHA256SUMS
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-assets
+          path: dist/
+          if-no-files-found: error
+
+  # The tap, the bucket and microsoft/winget-pkgs are separate repositories, and
+  # pushing to them needs a cross-repository credential this project does not
+  # hold. So render the manifests with real digests and hand them to the
+  # operator as an artifact, rather than pretending the channels self-update.
+  packaging:
+    name: Render tap/bucket/winget manifests
+    needs: [prepare, checksums]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ needs.prepare.outputs.ref }}
+          persist-credentials: false
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-assets
+          path: dist
+
+      - name: Render
+        run: |
+          set -euo pipefail
+          node scripts/build-packaging-manifests.mjs --sums dist/SHA256SUMS --out dist/packaging
+          packaging/homebrew/update-formula.sh \
+            --version "$VERSION" \
+            --sums dist/SHA256SUMS \
+            --output dist/packaging/homebrew/tokencount.rb
+          find dist/packaging -type f -print
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: packaging-manifests
+          path: dist/packaging/
+          if-no-files-found: error
+
+  publish:
+    name: Attest and publish
+    needs: [prepare, checksums, packaging]
+    if: needs.prepare.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ needs.prepare.outputs.tag }}
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-assets
+          path: dist
+
+      # One call covers every archive: the attestation subjects are the digests
+      # listed in SHA256SUMS.
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3
+        with:
+          subject-checksums: dist/SHA256SUMS
+
+      - name: Upload to the GitHub Release
+        run: |
+          set -euo pipefail
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" \
+              --draft \
+              --verify-tag \
+              --title "tokencount $VERSION" \
+              --generate-notes
+          fi
+          gh release upload "$TAG" dist/* --clobber
+
+      - name: Summary
+        run: |
+          set -euo pipefail
+          {
+            echo "### tokencount $VERSION -> $TAG"
+            echo
+            echo "Rust CLI archives, SHA256SUMS and a build-provenance attestation are attached to the release."
+            echo
+            echo "**The release is a draft.** Publish it from the Releases page to:"
+            echo
+            echo "1. make the assets downloadable,"
+            echo "2. fire \`release: published\`, which runs offline-bundle.yml and appends"
+            echo "   \`tokencount-offline.tar.gz\` and \`tokencount-cli.tar.gz\`, and"
+            echo "3. run npm-publish.yml, which ships the six npm packages."
+            echo
+            echo "Publishing it from a workflow using \`GITHUB_TOKEN\` would NOT trigger"
+            echo "either -- GitHub does not re-trigger workflows on events raised by"
+            echo "\`GITHUB_TOKEN\` -- so a human has to press the button."
+            echo
+            echo "Homebrew / Scoop / WinGet do not update themselves. Download the"
+            echo "\`packaging-manifests\` artifact from this run and open the three PRs;"
+            echo "RELEASE-PACKAGING.md has the steps."
+            echo
+            echo "Verify a download:"
+            echo '```'
+            echo "gh attestation verify tokencount-$VERSION-<target>.tar.gz --repo $GH_REPO"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  dry-run-summary:
+    name: Dry run summary
+    needs: [prepare, checksums, packaging]
+    if: needs.prepare.outputs.publish != 'true'
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - run: |
+          set -euo pipefail
+          {
+            echo "### Dry run"
+            echo
+            echo "Built, packaged, checksummed and rendered packaging manifests for every"
+            echo "target; nothing was attached to a release and no provenance was attested."
+            echo "Re-run with a tag input, or push a \`v*\` tag, to produce a real release."
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,264 @@
+name: Publish to npm
+
+# Ships the native Rust CLI to npm as six packages: one per release target,
+# plus the root "tokencount" package that picks the right one at run time.
+# Binaries are not built here -- they come from the archives attached to the
+# release, checked against its SHA256SUMS *and* against the build-provenance
+# attestation release.yml signed, which SHA256SUMS alone cannot substitute for
+# (an attacker who can replace an asset can replace the checksum file too).
+#
+# ORDER MATTERS. This fires on `release: published`, and expects the Rust
+# archives to already be attached -- which is what happens when you push the
+# tag, let release.yml finish, and then publish the draft it created. Creating
+# a release from the GitHub UI with a brand new tag instead fires both events
+# at once, and this workflow will sit in "Wait for the release archives" while
+# release.yml is still building. It waits an hour; if that is not enough,
+# re-run it by hand with workflow_dispatch. RELEASE-PACKAGING.md has the
+# runbook.
+#
+# ONE-TIME BOOTSTRAP. Publishing here is OIDC trusted publishing with no stored
+# token, and npm can only be told to trust a workflow for a package that
+# already exists. The first version of each of the six names therefore has to
+# be published by hand, and the trusted publisher configured on npmjs.com
+# afterwards. The preflight step below fails with those instructions rather
+# than letting the first run die on an opaque authentication error.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish (e.g. v1.0.1)"
+        required: true
+        type: string
+      dry_run:
+        description: "Run npm publish --dry-run instead of publishing"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-publish-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+env:
+  TAG: ${{ github.event.release.tag_name || inputs.tag }}
+  DRY_RUN: ${{ inputs.dry_run && '--dry-run' || '' }}
+  # Pinned like every action SHA in this repo: an unpinned `npm@latest` would be
+  # the largest mutable input in a job that holds id-token: write and is about
+  # to publish six packages. Trusted publishing needs npm >= 11.5.1.
+  NPM_VERSION: "12.0.2"
+
+jobs:
+  platforms:
+    name: Publish @tokencount/* platform packages
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
+          persist-credentials: false
+
+      # No registry-url: setup-node would write an .npmrc pinning
+      # //registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}, and with no such
+      # variable set npm would see the literal string as a credential. OIDC
+      # publishing targets registry.npmjs.org by default.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+
+      - name: Install the pinned npm
+        run: npm install -g "npm@$NPM_VERSION"
+
+      - name: Resolve version and check it against the tag
+        id: version
+        run: |
+          version="$(node scripts/build-npm-packages.mjs --print-version)"
+          if [ "$TAG" != "v$version" ]; then
+            echo "::error::tag $TAG does not match Cargo.toml version $version"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      # Trusted publishing cannot create a package, only publish a new version
+      # of one. Say so here instead of failing halfway through the loop below
+      # with an authentication error that does not name the real problem.
+      - name: Preflight -- every package must already exist on the registry
+        if: ${{ !inputs.dry_run }}
+        run: |
+          set -uo pipefail
+          missing=""
+          for name in $(node -p "require('./npm/lib/targets.json').targets.map(t => t.package).join(' ')") tokencount; do
+            if ! npm view "$name" version >/dev/null 2>&1; then
+              missing="$missing $name"
+            fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::these npm packages do not exist yet:$missing"
+            cat >&2 <<'EOF'
+          Trusted publishing (OIDC) can publish a new version of an existing
+          package, but it cannot create one: the trusted-publisher setting lives
+          on the package's own settings page, so the package has to exist first.
+
+          One-time bootstrap, from a machine with an npm account:
+            1. create the @tokencount organisation/scope on npmjs.com
+            2. publish each name once with a granular access token
+            3. on each package's Settings -> Trusted publisher, select this
+               repository and the workflow .github/workflows/npm-publish.yml
+            4. revoke the token
+
+          RELEASE-PACKAGING.md has the exact commands.
+          EOF
+            exit 1
+          fi
+
+      - name: Wait for the release archives
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          mkdir -p dist/release-artifacts
+          # shellcheck disable=SC2016  # the backticks below are JS, not shell
+          node -e '
+            const { targets } = require("./npm/lib/targets.json");
+            for (const t of targets) {
+              console.log(`tokencount-${process.env.VERSION}-${t.rustTarget}.${t.archive}`);
+            }
+            console.log("SHA256SUMS");
+          ' > /tmp/expected-assets
+          # 120 x 30s = one hour. release.yml builds five targets from scratch
+          # with lto = true and codegen-units = 1; the Windows leg in particular
+          # is slow. Overshooting costs nothing, timing out costs a manual re-run.
+          for attempt in $(seq 1 120); do
+            gh release download "$TAG" --dir dist/release-artifacts \
+              --pattern 'tokencount-*' --pattern 'SHA256SUMS' --clobber || true
+            missing=""
+            while read -r asset; do
+              [ -f "dist/release-artifacts/$asset" ] || missing="$missing $asset"
+            done < /tmp/expected-assets
+            if [ -z "$missing" ]; then
+              echo "all release assets present"
+              exit 0
+            fi
+            echo "attempt $attempt/120: still waiting for:$missing"
+            sleep 30
+          done
+          echo "::error::release $TAG still has no:$missing"
+          cat >&2 <<EOF
+          The Rust archives never appeared. Either release.yml has not run for
+          $TAG, or it failed, or it is still going.
+
+          Check the Release workflow for $TAG, then re-run this one by hand:
+            Actions -> Publish to npm -> Run workflow -> tag: $TAG
+          EOF
+          exit 1
+
+      # SHA256SUMS lives on the same release as the archives, so it only proves
+      # the download arrived intact. The attestation is the claim that cannot be
+      # forged by someone with write access to the release: it is signed by
+      # release.yml's own OIDC identity.
+      - name: Verify build provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for archive in dist/release-artifacts/tokencount-*; do
+            echo "verifying $archive"
+            gh attestation verify "$archive" \
+              --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml"
+          done
+
+      - name: Stage npm packages
+        run: node scripts/build-npm-packages.mjs --artifacts dist/release-artifacts
+
+      - name: Test the launcher
+        run: node npm/test/launcher.test.cjs
+
+      - name: Smoke-test the binary being published
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          out="$(dist/npm/@tokencount/linux-x64/bin/tokencount --version)"
+          echo "$out"
+          [ "$out" = "tokencount $VERSION" ] || {
+            echo "::error::staged linux-x64 binary reports '$out', expected 'tokencount $VERSION'"
+            exit 1
+          }
+
+      - name: Publish platform packages
+        run: |
+          for dir in dist/npm/@tokencount/*; do
+            # shellcheck disable=SC2016  # the backticks below are JS, not shell
+            spec="$(node -e '
+              const path = require("node:path");
+              const m = require(path.resolve(process.argv[1], "package.json"));
+              console.log(`${m.name}@${m.version}`);
+            ' "$dir")"
+            if npm view "$spec" version >/dev/null 2>&1; then
+              echo "$spec is already published, skipping"
+              continue
+            fi
+            echo "publishing $spec"
+            # shellcheck disable=SC2086  # DRY_RUN is a flag or empty, on purpose
+            npm publish "$dir" --provenance --access public $DRY_RUN
+          done
+
+  root:
+    name: Publish tokencount
+    needs: platforms
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+
+      - name: Install the pinned npm
+        run: npm install -g "npm@$NPM_VERSION"
+
+      - name: Resolve version
+        id: version
+        run: echo "version=$(node scripts/build-npm-packages.mjs --print-version)" >> "$GITHUB_OUTPUT"
+
+      # The root package is useless until every optionalDependency it names is
+      # resolvable, so do not publish it before the registry has caught up.
+      - name: Wait for the platform packages to be resolvable
+        if: ${{ !inputs.dry_run }}
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          for name in $(node -p "require('./npm/lib/targets.json').targets.map(t => t.package).join(' ')"); do
+            for attempt in $(seq 1 30); do
+              if npm view "$name@$VERSION" version >/dev/null 2>&1; then
+                echo "$name@$VERSION is live"
+                break
+              fi
+              if [ "$attempt" = "30" ]; then
+                echo "::error::$name@$VERSION never appeared on the registry"
+                exit 1
+              fi
+              sleep 10
+            done
+          done
+
+      - name: Stage the root package
+        run: node scripts/build-npm-packages.mjs --root-only
+
+      - name: Publish
+        run: |
+          # shellcheck disable=SC2086  # DRY_RUN is a flag or empty, on purpose
+          npm publish dist/npm/tokencount --provenance --access public $DRY_RUN

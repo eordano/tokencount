@@ -2,7 +2,59 @@
 name = "tokencount"
 version = "1.0.1"
 edition = "2021"
+rust-version = "1.74"
 description = "Lightning-fast offline token counter for 9 LLM tokenizers"
+license = "AGPL-3.0-only"
+repository = "https://github.com/eordano/tokencount"
+homepage = "https://tokencount.eordano.com"
+readme = "README.md"
+keywords = ["tokenizer", "llm", "token-count", "bpe", "cli"]
+categories = ["command-line-utilities", "text-processing"]
+
+# Not published to crates.io: 8 of the 9 tokenizer tables are compiled in from
+# vendor files this crate may not redistribute, and they total ~90 MB against a
+# 10 MiB registry limit, so `cargo install tokencount` could never produce the
+# tool it advertises. Prebuilt release binaries are the supported install path;
+# see [package.metadata.binstall] below.
+publish = false
+
+# Trim everything the Rust build does not read, so `cargo package` stays small
+# and the source tarball matches what actually compiles.
+exclude = [
+  "/.claude/",
+  "/.github/",
+  "/CLAUDE.md",
+  "/CNAME",
+  "/cli/",
+  "/css/",
+  "/docs/",
+  "/flake.lock",
+  "/flake.nix",
+  "/index.html",
+  "/js/",
+  "/npm/",
+  "/package-lock.json",
+  "/package.json",
+  "/packaging/",
+  "/RELEASE-PACKAGING.md",
+  "/playwright.bundle.config.js",
+  "/playwright.config.js",
+  "/scripts/",
+  "/tests/",
+]
+
+# `cargo binstall tokencount` (or, until/unless the crate is on crates.io,
+# `cargo binstall --git https://github.com/eordano/tokencount tokencount`).
+# Mirrors the release asset layout: one archive per target, tagged v{version},
+# with the bare binary at the archive root.
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ version }-{ target }.tar.gz"
+bin-dir = "{ bin }{ binary-ext }"
+pkg-fmt = "tgz"
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ version }-{ target }.zip"
+pkg-fmt = "zip"
 
 [dependencies]
 serde_json = "1"

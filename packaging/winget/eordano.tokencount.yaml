@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.version.1.12.0.schema.json
+
+# winget manifest set for microsoft/winget-pkgs.
+#
+# A bare .exe with no installer is a supported winget shape: InstallerType "zip"
+# with NestedInstallerType "portable" tells winget to unpack the release archive
+# into its own portable package root and shim the executable onto PATH, with a
+# real "winget uninstall" entry. No MSI, MSIX or Inno wrapper is needed.
+#
+# These three files are templates: the InstallerSha256 in the installer manifest
+# is a placeholder, because a release's digests do not exist until it is built.
+# The Release workflow renders filled-in copies into its `packaging-manifests`
+# artifact; take them from there rather than editing by hand:
+#
+#   node scripts/build-packaging-manifests.mjs --sums dist/SHA256SUMS --out dist/packaging
+#
+# Then copy the rendered files into a checkout of microsoft/winget-pkgs at
+#   manifests/e/eordano/tokencount/<version>/
+# and open a PR. RELEASE-PACKAGING.md has the full runbook.
+
+PackageIdentifier: eordano.tokencount
+PackageVersion: 1.0.1
+DefaultLocale: en-US
+ManifestType: version
+ManifestVersion: 1.12.0

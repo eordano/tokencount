@@ -58,7 +58,7 @@ impl DATrie {
                 Some((next, is_term)) => {
                     cur = next;
                     if is_term {
-                        best = offset + 2; // offset+2 == (i - pos + 1) where i = pos+1+offset
+                        best = offset + 2;
                     }
                 }
                 None => break,

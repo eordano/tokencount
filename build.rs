@@ -20,7 +20,7 @@ fn fnv_hash(data: &[u8]) -> u64 {
         h ^= b as u64;
         h = h.wrapping_mul(FNV_PRIME);
     }
-    h | 1 // never zero -- 0 is the empty-slot sentinel
+    h | 1
 }
 
 fn main() {
@@ -47,9 +47,7 @@ fn build_claude_trie(manifest_dir: &str, out_dir: &str) {
     for token in &vocab {
         let mut cur: u32 = 0;
         for &byte in token.as_bytes() {
-            let existing = node_children[cur as usize]
-                .iter()
-                .find(|(k, _)| *k == byte);
+            let existing = node_children[cur as usize].iter().find(|(k, _)| *k == byte);
             cur = if let Some(&(_, idx)) = existing {
                 idx
             } else {
@@ -116,10 +114,7 @@ fn build_claude_trie(manifest_dir: &str, out_dir: &str) {
         }
     }
 
-    let actual_size = occupied
-        .iter()
-        .rposition(|&o| o)
-        .map_or(0, |i| i + 1);
+    let actual_size = occupied.iter().rposition(|&o| o).map_or(0, |i| i + 1);
     base.truncate(actual_size);
     check.truncate(actual_size);
 
@@ -224,8 +219,6 @@ fn build_frozen_models(manifest_dir: &str, out_dir: &str) {
     let mut missing: Vec<Missing> = Vec::new();
     let mut embedded: Vec<&str> = vec!["claude"];
 
-    // A relative TOKEN_COUNT_MODELS is resolved against the crate root, not
-    // against whatever directory cargo happened to run the build script in.
     let models_path = models_dir.as_deref().map(|d| {
         let p = Path::new(d);
         if p.is_absolute() {
@@ -236,7 +229,6 @@ fn build_frozen_models(manifest_dir: &str, out_dir: &str) {
     });
     let models_path = models_path.as_deref();
 
-    // Tiktoken (OpenAI o200k_base)
     let tiktoken_path = models_path.map(|d| d.join("o200k_base.tiktoken"));
     match tiktoken_path.filter(|p| p.exists()) {
         Some(path) => {
@@ -259,7 +251,6 @@ fn build_frozen_models(manifest_dir: &str, out_dir: &str) {
         }
     }
 
-    // HF BPE models
     for &(model, repo) in HF_MODELS {
         let const_name = model.to_uppercase();
         let tokenizer_path = models_path.map(|d| d.join(model).join("tokenizer.json"));
@@ -279,10 +270,16 @@ fn build_frozen_models(manifest_dir: &str, out_dir: &str) {
                 embedded.push(model);
             }
             None => {
-                codegen.push_str(&format!("pub const {}: Option<&[u8]> = None;\n", const_name));
+                codegen.push_str(&format!(
+                    "pub const {}: Option<&[u8]> = None;\n",
+                    const_name
+                ));
                 missing.push(Missing {
                     rel: format!("{}/tokenizer.json", model),
-                    url: format!("https://huggingface.co/{}/resolve/main/tokenizer.json", repo),
+                    url: format!(
+                        "https://huggingface.co/{}/resolve/main/tokenizer.json",
+                        repo
+                    ),
                 });
             }
         }
@@ -321,7 +318,11 @@ fn missing_models_error(models_dir: Option<&str>, missing: &[Missing]) -> String
     match models_dir {
         Some(dir) => {
             let _ = writeln!(m, "  TOKEN_COUNT_MODELS={dir}");
-            let _ = writeln!(m, "  ...is set, but {} file(s) are missing:\n", missing.len());
+            let _ = writeln!(
+                m,
+                "  ...is set, but {} file(s) are missing:\n",
+                missing.len()
+            );
         }
         None => {
             m.push_str("  TOKEN_COUNT_MODELS is not set, so none of the following were found:\n\n");
@@ -427,8 +428,16 @@ fn build_hf_frozen(path: &Path) -> Vec<u8> {
             let b = parts.next().unwrap_or("").to_string();
             (a, b)
         } else if let Some(arr) = entry.as_array() {
-            let a = arr.first().and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let b = arr.get(1).and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let a = arr
+                .first()
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let b = arr
+                .get(1)
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
             (a, b)
         } else {
             continue;
@@ -479,7 +488,9 @@ fn build_hf_frozen(path: &Path) -> Vec<u8> {
     serialize_normalizer(&mut blob, root.get("normalizer"));
     serialize_pre_tokenizer(&mut blob, root.get("pre_tokenizer"));
     blob.extend_from_slice(&(sorted_codepoints.len() as u32).to_le_bytes());
-    for &cp in &sorted_codepoints { blob.extend_from_slice(&cp.to_le_bytes()); }
+    for &cp in &sorted_codepoints {
+        blob.extend_from_slice(&cp.to_le_bytes());
+    }
     blob.extend_from_slice(&merges_table);
     blob.extend_from_slice(&merge_left_table);
     blob.extend_from_slice(&merge_right_table);
@@ -494,26 +505,20 @@ fn count_post_special_tokens(val: Option<&serde_json::Value>) -> usize {
     };
     let ty = val.get("type").and_then(|v| v.as_str()).unwrap_or("");
     match ty {
-        "TemplateProcessing" => {
-            val.get("single")
-                .and_then(|v| v.as_array())
-                .map(|arr| {
-                    arr.iter()
-                        .filter(|item| item.get("SpecialToken").is_some())
-                        .count()
-                })
-                .unwrap_or(0)
-        }
-        "Sequence" => {
-            val.get("processors")
-                .and_then(|v| v.as_array())
-                .map(|arr| {
-                    arr.iter()
-                        .map(|p| count_post_special_tokens(Some(p)))
-                        .sum()
-                })
-                .unwrap_or(0)
-        }
+        "TemplateProcessing" => val
+            .get("single")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter(|item| item.get("SpecialToken").is_some())
+                    .count()
+            })
+            .unwrap_or(0),
+        "Sequence" => val
+            .get("processors")
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().map(|p| count_post_special_tokens(Some(p))).sum())
+            .unwrap_or(0),
         _ => 0,
     }
 }
@@ -535,28 +540,20 @@ fn serialize_normalizer(blob: &mut Vec<u8>, val: Option<&serde_json::Value>) {
                 .and_then(|p| p.get("String"))
                 .and_then(|s| s.as_str())
                 .unwrap_or("");
-            let content = val
-                .get("content")
-                .and_then(|s| s.as_str())
-                .unwrap_or("");
+            let content = val.get("content").and_then(|s| s.as_str()).unwrap_or("");
             write_length_prefixed_str(blob, pattern);
             write_length_prefixed_str(blob, content);
         }
         "Prepend" => {
             blob.push(NORM_PREPEND);
-            let prepend = val
-                .get("prepend")
-                .and_then(|s| s.as_str())
-                .unwrap_or("");
+            let prepend = val.get("prepend").and_then(|s| s.as_str()).unwrap_or("");
             write_length_prefixed_str(blob, prepend);
         }
         "NFC" => {
             blob.push(NORM_NFC);
         }
         "Sequence" => {
-            let normalizers = val
-                .get("normalizers")
-                .and_then(|v| v.as_array());
+            let normalizers = val.get("normalizers").and_then(|v| v.as_array());
             if let Some(arr) = normalizers {
                 if arr.is_empty() {
                     blob.push(NORM_NONE);
@@ -581,7 +578,6 @@ fn serialize_pre_tokenizer(blob: &mut Vec<u8>, val: Option<&serde_json::Value>) 
     let val = match val {
         Some(v) if !v.is_null() => v,
         _ => {
-            // 0 steps = no pre-tokenizer
             blob.extend_from_slice(&0u32.to_le_bytes());
             return;
         }
@@ -590,12 +586,11 @@ fn serialize_pre_tokenizer(blob: &mut Vec<u8>, val: Option<&serde_json::Value>) 
     let ty = val.get("type").and_then(|v| v.as_str()).unwrap_or("");
 
     let steps: Vec<&serde_json::Value> = match ty {
-        "Sequence" => {
-            val.get("pretokenizers")
-                .and_then(|v| v.as_array())
-                .map(|arr| arr.iter().collect())
-                .unwrap_or_default()
-        }
+        "Sequence" => val
+            .get("pretokenizers")
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().collect())
+            .unwrap_or_default(),
         "ByteLevel" | "Split" => vec![val],
         _ => vec![],
     };
@@ -670,7 +665,9 @@ fn build_frozen_table(keys: &[Vec<u8>], values: Option<&[u32]>, slot_size: usize
                 break;
             }
             idx += 1;
-            if idx == num_slots { idx = 0; }
+            if idx == num_slots {
+                idx = 0;
+            }
         }
     }
 

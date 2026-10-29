@@ -10,7 +10,6 @@
 <body>
   <div class="app-shell">
     <main class="main-content">
-      <!-- Panel A (always visible) -->
       <section class="panel" id="panel-a">
         <div class="panel-header">
           <span class="panel-title" id="panel-title-a">Input text</span>
@@ -32,7 +31,6 @@
         </div>
       </section>
 
-      <!-- Compare toggle (appears when panel A has text) -->
       <div class="compare-toggle" id="compare-toggle" style="display:none">
         <button class="btn compare-btn" id="compare-btn">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -44,7 +42,6 @@
         </button>
       </div>
 
-      <!-- Panel B (compare mode only) -->
       <section class="panel" id="panel-b" style="display:none">
         <div class="panel-header">
           <span class="panel-title" id="panel-title-b">Modified</span>
@@ -66,13 +63,11 @@
         </div>
       </section>
 
-      <!-- Mobile tabs (compare mode, mobile only) -->
       <div class="mobile-tabs" id="mobile-tabs" style="display:none">
         <button class="mobile-tab active" data-tab="a">Original</button>
         <button class="mobile-tab" data-tab="b">Modified</button>
       </div>
 
-      <!-- Diff summary strip (compare mode only) -->
       <div class="diff-summary" id="diff-summary" style="display:none">
         <div class="diff-summary-model">
           <button class="model-selector" id="model-selector-a">
@@ -101,7 +96,6 @@
         </div>
       </div>
 
-      <!-- Diff card (compare mode) -->
       <div class="diff-card" id="diff-card" style="display:none">
         <div class="diff-card-header">
           <span class="diff-card-label" id="diff-card-label">Word Diff</span>

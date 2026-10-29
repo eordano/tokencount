@@ -41,13 +41,17 @@
         marker="node_modules/.node-version"
         # Ensure devDependencies are installed even if NODE_ENV=production
         export NODE_ENV=development
-        if [ ! -d node_modules ] || [ package.json -nt node_modules/.package-lock.json ]; then
-          npm install
+        if [ -d node_modules ] && [ ! -f node_modules/.modules.yaml ]; then
+          echo "node_modules was not installed by pnpm, reinstalling..."
+          rm -rf node_modules
+        fi
+        if [ ! -d node_modules ] || [ package.json -nt node_modules/.modules.yaml ] || [ pnpm-lock.yaml -nt node_modules/.modules.yaml ]; then
+          pnpm install --frozen-lockfile --ignore-scripts
           printf '%s' "$node_ver" > "$marker"
         elif [ ! -f "$marker" ] || [ "$(cat "$marker")" != "$node_ver" ]; then
           echo "Node version changed (want $node_ver), reinstalling modules..."
           rm -rf node_modules
-          npm install
+          pnpm install --frozen-lockfile --ignore-scripts
           printf '%s' "$node_ver" > "$marker"
         fi
       '';
@@ -60,35 +64,65 @@
         in
         builtins.head m;
 
-      npmBuild =
+      jsSrc = nixpkgs.lib.fileset.toSource {
+        root = ./.;
+        fileset = nixpkgs.lib.fileset.unions [
+          ./package.json
+          ./pnpm-lock.yaml
+          ./pnpm-workspace.yaml
+          ./index.html
+          ./cli
+          ./css
+          ./data
+          ./js
+          ./scripts
+        ];
+      };
+
+      pnpmDeps =
+        { pkgs }:
+        pkgs.fetchPnpmDeps {
+          pname = "tokencount-js";
+          inherit (packageJson) version;
+          src = jsSrc;
+          pnpm = pkgs.pnpm_12;
+          fetcherVersion = 4;
+          hash = "sha256-NOz5YYByMLpOyEw/QrhIUzCJw2sPFH1hFmyPXKktN5w=";
+        };
+
+      pnpmBuild =
         { pkgs }:
         extra:
-        pkgs.buildNpmPackage (
+        pkgs.stdenv.mkDerivation (
           {
-            version = packageJson.version;
-            src = self;
-            npmDepsHash = "sha256-V+8FEjxvqCGtQr9IgNqhlZAbOASj0QjPMoe/fZcoPvk=";
+            inherit (packageJson) version;
+            src = jsSrc;
+            nativeBuildInputs = [
+              pkgs.nodejs_26
+              pkgs.pnpm_12
+              pkgs.pnpmConfigHook
+            ];
+            buildInputs = [ pkgs.nodejs_26 ];
+            pnpmDeps = pnpmDeps { inherit pkgs; };
             env = {
               MODELS_DIR = hfModels { inherit pkgs; };
-              ESBUILD_BINARY_PATH = "${esbuild_0_27_3 { inherit pkgs; }}/bin/esbuild";
+              ESBUILD_BINARY_PATH = "${esbuild_0_28_2 { inherit pkgs; }}/bin/esbuild";
               PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = "1";
             };
-            npmRebuildFlags = [ "--ignore-scripts" ];
-            dontNpmBuild = true;
           }
           // extra
         );
 
-      esbuild_0_27_3 =
+      esbuild_0_28_2 =
         { pkgs }:
-        pkgs.buildGoModule rec {
+        pkgs.buildGoLatestModule rec {
           pname = "esbuild";
-          version = "0.27.3";
+          version = "0.28.2";
           src = pkgs.fetchFromGitHub {
             owner = "evanw";
             repo = "esbuild";
             rev = "v${version}";
-            hash = "sha256-SAe8ixiU3wVLccEWxHvp+H2X+Ef1MwoN9+Ko7wh+0G8=";
+            hash = "sha256-I1u+9U5Oj/KzxSjCxwyitwSuDKimatkbC3R2OtaUsfM=";
           };
           vendorHash = "sha256-+BfxCyg0KkDQpHt/wycy/8CTG6YBA/VJvJFhhzUnSiQ=";
           subPackages = [ "cmd/esbuild" ];
@@ -212,14 +246,17 @@
         // nixpkgs.lib.optionalAttrs isLinux (
           let
             e2eInputs = [
-              pkgs.nodejs
+              pkgs.nodejs_26
+              pkgs.pnpm_12
               pkgs.python3
               pkgs.chromium
             ];
             e2eSetup = ''
               export FONTCONFIG_FILE="${fontsConf { inherit pkgs; }}"
               export BROWSER_PATH="${pkgs.chromium}/bin/chromium"
-              cd "$(git rev-parse --show-toplevel)"
+              root=$PWD
+              while [ ! -f "$root/playwright.config.js" ] && [ "$root" != / ]; do root=$(dirname "$root"); done
+              cd "$root"
               ${ensureNodeModules}
             '';
             mkE2eTest =
@@ -234,10 +271,10 @@
               };
           in
           {
-            test-e2e = mkE2eTest "test-e2e" ''npx playwright test "$@"'';
+            test-e2e = mkE2eTest "test-e2e" ''pnpm exec playwright test "$@"'';
             test-e2e-bundle = mkE2eTest "test-e2e-bundle" ''
-              npm run build:offline
-              npx playwright test --config playwright.bundle.config.js "$@"
+              pnpm run build:offline
+              pnpm exec playwright test --config playwright.bundle.config.js "$@"
             '';
           }
         )
@@ -251,21 +288,15 @@
                 version = cargoVersion;
                 doCheck = false;
                 strictDeps = true;
-                src = pkgs.lib.cleanSourceWith {
-                  src = self;
-                  filter =
-                    path: type:
-                    let
-                      base = builtins.baseNameOf path;
-                      p = toString path;
-                    in
-                    base == "Cargo.toml"
-                    || base == "Cargo.lock"
-                    || base == "build.rs"
-                    || base == "src"
-                    || nixpkgs.lib.hasInfix "/src/" p
-                    || base == "data"
-                    || nixpkgs.lib.hasInfix "/data/" p;
+                src = nixpkgs.lib.fileset.toSource {
+                  root = ./.;
+                  fileset = nixpkgs.lib.fileset.unions [
+                    ./Cargo.toml
+                    ./Cargo.lock
+                    ./build.rs
+                    ./src
+                    ./data
+                  ];
                 };
 
                 cargoLock = ./Cargo.lock;
@@ -291,7 +322,7 @@
                 '') repoToDir
               );
             in
-            npmBuild { inherit pkgs; } {
+            pnpmBuild { inherit pkgs; } {
               pname = "tokencount-js";
               buildPhase = ''
                 runHook preBuild
@@ -310,7 +341,7 @@
               '';
             };
 
-          build-offline = npmBuild { inherit pkgs; } {
+          build-offline = pnpmBuild { inherit pkgs; } {
             pname = "tokencount-offline";
             buildPhase = ''
               runHook preBuild
@@ -336,7 +367,8 @@
         {
           default = pkgs.mkShell {
             packages = [
-              pkgs.nodejs
+              pkgs.nodejs_26
+              pkgs.pnpm_12
               pkgs.python3
               pkgs.cargo
               pkgs.rustc

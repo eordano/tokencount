@@ -15,7 +15,7 @@
     "check:versions": "node scripts/build-npm-packages.mjs --check",
     "test:cli": "node tests/cli.test.mjs",
     "test:launcher": "node npm/test/launcher.test.cjs",
-    "test:bundle": "node scripts/build-offline.mjs && npx playwright test --config playwright.bundle.config.js",
+    "test:bundle": "node scripts/build-offline.mjs && playwright test --config playwright.bundle.config.js",
     "check:pins": "node scripts/fetch-models.mjs --verify-pins"
   },
   "repository": {
@@ -38,13 +38,14 @@
   ],
   "author": "",
   "license": "AGPL-3.0-only",
+  "packageManager": "pnpm@12.9.0",
   "engines": {
     "node": ">=18"
   },
   "devDependencies": {
-    "@huggingface/transformers": "3.8.1",
+    "@huggingface/transformers": "4.3.0",
     "@playwright/test": "^1.58.2",
-    "esbuild": "^0.27.3",
-    "gpt-tokenizer": "^3.4.0"
+    "esbuild": "^0.28.2",
+    "gpt-tokenizer": "^4.0.0"
   }
 }

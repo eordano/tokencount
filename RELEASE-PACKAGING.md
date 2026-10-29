@@ -25,15 +25,14 @@ Two things follow from that table and matter more than anything else here:
 
 1. **A tag push does not create a published release.** It creates a draft. A
    human presses Publish.
-2. **Publishing that draft is what starts npm and the offline bundle.** A
-   release published by a workflow using `GITHUB_TOKEN` does not fire
-   `release: published` -- GitHub refuses to re-trigger on its own token -- so
-   there is no way around the button that does not involve storing a long-lived
-   PAT.
+2. **Publishing that draft is what starts npm and the offline bundle.** GitHub
+   refuses to fire `release: published` for a release published on its own
+   `GITHUB_TOKEN`, so there is no way around the button short of storing a
+   long-lived PAT.
 
 The version in `Cargo.toml` is the single source of truth. `package.json`,
-`package-lock.json`, `Cargo.lock` and the three `packaging/` templates all have
-to agree with it, and CI fails if they do not.
+`Cargo.lock` and the three `packaging/` templates all have to agree with it, and
+CI fails if they do not. (`pnpm-lock.yaml` records no version of its own.)
 
 ## Setup you must do by hand
 
@@ -50,18 +49,17 @@ One-time. None of this can be automated from inside the repository.
 
 ### 2. npm: create the scope, bootstrap the six packages, then hand over to OIDC
 
-`npm-publish.yml` publishes with `npm publish --provenance` and no token, using
-npm trusted publishing. npm can only be told to trust a workflow *for a package
-that already exists* -- the setting lives on the package's own settings page.
-So the first version of each name has to go up by hand. This is the only time a
-token touches these packages, and the only versions without npm provenance.
+`npm-publish.yml` publishes with `pnpm publish --provenance` and no token, using
+npm trusted publishing (pnpm 12 does the OIDC token exchange itself). npm can only trust a workflow *for a package that
+already exists*, so the first version of each name goes up by hand -- the only
+time a token touches these packages, and the only versions without provenance.
 
 ```bash
 # 1. Create the organisation/scope, once, on npmjs.com:
 #    https://www.npmjs.com/org/create  ->  name it "tokencount"
 
 # 2. Create a granular access token with publish rights, and log in with it.
-npm login
+pnpm login
 
 # 3. Stage and publish each of the six packages once, at the real version.
 #    This needs the release archives, so cut the v1.0.1 release first (see
@@ -71,9 +69,9 @@ gh release download v1.0.1 --dir dist/release-artifacts \
 node scripts/build-npm-packages.mjs --artifacts dist/release-artifacts
 
 for dir in dist/npm/@tokencount/*; do
-  npm publish "$dir" --access public
+  pnpm publish "$dir" --access public --no-git-checks
 done
-npm publish dist/npm/tokencount --access public
+pnpm publish dist/npm/tokencount --access public --no-git-checks
 
 # 4. Revoke the token.
 ```
@@ -140,7 +138,7 @@ Worked example: v1.0.2.
 # Cargo.toml is the source of truth -- edit its [package] version by hand.
 $EDITOR Cargo.toml
 
-# Propagate it to package.json, package-lock.json and Cargo.lock.
+# Propagate it to package.json and Cargo.lock.
 node scripts/build-npm-packages.mjs --root-only --stamp
 
 # The packaging templates hardcode the version too; bump them by hand.
@@ -184,7 +182,7 @@ git push origin v1.0.2
 - creates the release **as a draft** with the archives attached.
 
 Watch it: `gh run watch`. It takes a while -- five from-scratch release builds
-with `lto = true` and `codegen-units = 1`.
+with `lto = true` and `codegen-units = 16`.
 
 ### 3. Publish the draft
 
@@ -192,8 +190,8 @@ Releases page -> the `v1.0.2` draft -> edit the notes if you want -> Publish.
 
 That single click starts `npm-publish.yml` and `offline-bundle.yml`. Do not
 create the release from the UI with a new tag: that fires the tag push and the
-publish at the same instant, and npm-publish will sit waiting up to an hour for
-archives that have not been built yet.
+publish at the same instant, and npm-publish waits up to an hour for archives
+that have not been built yet.
 
 ### 4. Check what landed
 
@@ -205,8 +203,8 @@ gh attestation verify tokencount-1.0.2-x86_64-unknown-linux-musl.tar.gz \
   --repo eordano/tokencount \
   --signer-workflow eordano/tokencount/.github/workflows/release.yml
 
-npm view tokencount@1.0.2 version
-npm view @tokencount/linux-x64@1.0.2 version
+pnpm view tokencount@1.0.2 version
+pnpm view @tokencount/linux-x64@1.0.2 version
 ```
 
 ## After the release: the three external channels
@@ -269,26 +267,23 @@ Honest list of the gaps. None of these are oversights.
 
 **crates.io.** `Cargo.toml` sets `publish = false`. Eight of the nine tokenizer
 tables are vendor files this repository cannot redistribute -- four of the seven
-HuggingFace sources declare no license at all, and DeepSeek's and Gemma's
-upstream terms add use-based restrictions that AGPL-3.0 section 7 forbids -- and
-they total roughly 90 MB against crates.io's 10 MiB package limit. A crate on
-crates.io could therefore only ever build a Claude-only binary. `cargo binstall
---git https://github.com/eordano/tokencount tokencount` is the supported path
-from a Rust toolchain; it downloads a release archive rather than compiling.
-Because there is no crates.io entry, `cargo binstall tokencount` by bare name
-will not resolve.
+HuggingFace sources declare no license, and DeepSeek's and Gemma's upstream
+terms add use-based restrictions AGPL-3.0 section 7 forbids -- and they total
+roughly 90 MB against crates.io's 10 MiB limit, so a crate could only ever
+build a Claude-only binary. `cargo binstall --git
+https://github.com/eordano/tokencount tokencount` is the supported path from a
+Rust toolchain (bare `cargo binstall tokencount` will not resolve -- there is
+no registry entry).
 
-**Code signing and notarization.** The macOS binaries are not signed with an
-Apple Developer ID and not notarized; the Windows executable is not
-Authenticode-signed. Downloads through `curl`, `npm`, `brew` or the install
-scripts carry no quarantine attribute and run normally, but a *browser*
-download of the macOS tarball is Gatekeeper-blocked until the user clears
-`com.apple.quarantine`, and Windows SmartScreen will warn about the unsigned
-executable. Fixing this needs a paid Apple Developer account and a code-signing
-certificate, plus somewhere to keep the keys -- which would be the first
-long-lived secret in this pipeline. The build-provenance attestation is what
-this project offers instead: it proves origin, which is the property signing is
-usually bought for, without a key to leak.
+**Code signing and notarization.** The macOS binaries are not Apple-signed or
+notarized; the Windows executable is not Authenticode-signed. Downloads via
+`curl`, `npm`, `brew` or the install scripts carry no quarantine attribute and
+run normally, but a *browser* download of the macOS tarball is
+Gatekeeper-blocked until the user clears `com.apple.quarantine`, and
+SmartScreen warns on the unsigned executable. Fixing it needs a paid Apple
+Developer account and a certificate -- the first long-lived secret in this
+pipeline. The build-provenance attestation proves origin instead, without a key
+to leak.
 
 **Pushing to the tap, the bucket and winget-pkgs.** All three are separate
 repositories. `GITHUB_TOKEN` is scoped to this one, so writing to them needs a
@@ -331,7 +326,7 @@ moves.
 published before `release.yml` finished. Once the assets are attached, Actions
 -> Publish to npm -> Run workflow -> tag `v1.0.2`.
 
-**npm publish failed with an authentication error.** Either the bootstrap in
+**pnpm publish failed with an authentication error.** Either the bootstrap in
 [step 2](#2-npm-create-the-scope-bootstrap-the-six-packages-then-hand-over-to-oidc)
 has not been done, or a trusted publisher points at the wrong workflow file.
 The preflight step names the packages it could not find.
@@ -339,4 +334,4 @@ The preflight step names the packages it could not find.
 **A dry run.** Actions -> Release -> Run workflow with an *empty* tag input
 builds, packages, checksums and renders the packaging manifests without
 attesting anything or touching a release. Actions -> Publish to npm -> Run
-workflow with `dry_run` checked does `npm publish --dry-run`.
+workflow with `dry_run` checked does `pnpm publish --dry-run`.

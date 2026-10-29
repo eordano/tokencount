@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Integration tests for the tokencount CLI
-// Run: npm run test:cli  (after npm run build:cli)
+// Run: pnpm run test:cli  (after pnpm run build:cli)
 
 import { execSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -55,7 +55,7 @@ function assert(condition, message) {
 }
 
 if (!fs.existsSync(CLI)) {
-  console.error("Error: dist/tokencount.mjs not found. Run 'npm run build:cli' first.");
+  console.error("Error: dist/tokencount.mjs not found. Run 'pnpm run build:cli' first.");
   process.exit(1);
 }
 

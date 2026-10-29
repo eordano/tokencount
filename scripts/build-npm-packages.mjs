@@ -13,7 +13,8 @@
  * The root package is staged rather than published straight from the repo so
  * that the five optionalDependencies exist only in the published manifest:
  * putting them in the repo's package.json would desynchronise
- * package-lock.json and break `npm ci` for every contributor.
+ * pnpm-lock.yaml and break `pnpm install --frozen-lockfile` for every
+ * contributor.
  *
  * Usage:
  *   node scripts/build-npm-packages.mjs [options]
@@ -22,7 +23,7 @@
  *   --out <dir>        staging root (default: dist/npm)
  *   --version <ver>    override the version (default: read from Cargo.toml)
  *   --root-only        stage just the root package (needs no archives)
- *   --stamp            also rewrite the repo's package.json/package-lock.json version
+ *   --stamp            also rewrite the repo's package.json/Cargo.lock version
  *   --check            verify versions only; write nothing, exit 1 on drift
  *   --print-version    print the Cargo.toml version and exit
  */
@@ -49,7 +50,7 @@ Stages the npm packages that ship the native tokencount binary.
   --out <dir>        staging root (default: dist/npm)
   --version <ver>    override the version (default: read from Cargo.toml)
   --root-only        stage just the root package (needs no archives)
-  --stamp            also rewrite the repo's package.json/package-lock.json version
+  --stamp            also rewrite the repo's package.json/Cargo.lock version
   --check            verify versions only; write nothing, exit 1 on drift
   --print-version    print the Cargo.toml version and exit
   -h, --help         show this help
@@ -242,12 +243,13 @@ function platformReadme(target, version) {
     "",
     `The \`${target.rustTarget}\` build of the [tokencount](${HOMEPAGE}) CLI, v${version}.`,
     "",
-    "This package exists only so that `npm install tokencount` can pull down a",
-    "prebuilt binary for your platform. Install `tokencount` instead; it lists this",
-    "package as an optional dependency and picks the right one at run time.",
+    "This package exists only so that installing `tokencount` from the npm registry",
+    "can pull down a prebuilt binary for your platform. Install `tokencount`",
+    "instead; it lists this package as an optional dependency and picks the right",
+    "one at run time.",
     "",
     "```sh",
-    "npm install -g tokencount",
+    "pnpm add -g tokencount",
     "```",
     "",
     `Licensed ${LICENSE}; see LICENSE.`,
@@ -349,7 +351,7 @@ function stampCargoLock(version, write) {
 }
 
 /**
- * Compares the repo's package.json/package-lock.json/Cargo.lock against the
+ * Compares the repo's package.json/Cargo.lock against the
  * Cargo version, rewriting them only when `write` is set. Returns the drift
  * found.
  */
@@ -362,20 +364,6 @@ function stampRepo(version, write) {
     if (write) {
       pkg.version = version;
       fs.writeFileSync(pkgFile, JSON.stringify(pkg, null, 2) + "\n");
-    }
-  }
-
-  const lockFile = path.join(ROOT, "package-lock.json");
-  if (fs.existsSync(lockFile)) {
-    const lock = JSON.parse(fs.readFileSync(lockFile, "utf8"));
-    const stale = lock.version !== version || lock.packages?.[""]?.version !== version;
-    if (stale) {
-      drift.push(`package-lock.json version != Cargo.toml ${version}`);
-      if (write) {
-        lock.version = version;
-        if (lock.packages?.[""]) lock.packages[""].version = version;
-        fs.writeFileSync(lockFile, JSON.stringify(lock, null, 2) + "\n");
-      }
     }
   }
 

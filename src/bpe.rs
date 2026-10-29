@@ -14,7 +14,9 @@ enum Normalizer {
 fn apply_normalizer(norm: &Normalizer, text: &str) -> String {
     match norm {
         Normalizer::None => text.to_string(),
-        Normalizer::Replace { pattern, content } => text.replace(pattern.as_str(), content.as_str()),
+        Normalizer::Replace { pattern, content } => {
+            text.replace(pattern.as_str(), content.as_str())
+        }
         Normalizer::Prepend(prefix) => format!("{}{}", prefix, text),
         Normalizer::Nfc => text.nfc().collect(),
         Normalizer::Sequence(norms) => {
@@ -57,10 +59,7 @@ fn apply_pre_tokenizer(pt: &PreTokenizer, text: &str) -> Vec<String> {
                         }
                         PreTokenizerStep::ByteLevel { table } => {
                             for c in &chunks {
-                                next_chunks.push(byte_level::encode_bytes(
-                                    c.as_bytes(),
-                                    table,
-                                ));
+                                next_chunks.push(byte_level::encode_bytes(c.as_bytes(), table));
                             }
                             break;
                         }
@@ -152,12 +151,16 @@ impl HfTokenizer {
     }
 
     pub fn count_tokens(&self, text: &str) -> usize {
-        if text.is_empty() { return 0; }
+        if text.is_empty() {
+            return 0;
+        }
         let normalized = apply_normalizer(&self.normalizer, text);
         let chunks = apply_pre_tokenizer(&self.pre_tokenizer, &normalized);
         let mut total = self.post_add;
         for chunk in &chunks {
-            if !chunk.is_empty() { total += self.bpe_count(chunk); }
+            if !chunk.is_empty() {
+                total += self.bpe_count(chunk);
+            }
         }
         total
     }
@@ -169,7 +172,9 @@ impl HfTokenizer {
             chunk.chars().map(|c| c.to_string()).collect()
         };
         let n = initial.len();
-        if n <= 1 { return n; }
+        if n <= 1 {
+            return n;
+        }
         if n > 512 {
             return self.bpe_count_chunked(&initial);
         }
@@ -205,7 +210,9 @@ impl HfTokenizer {
             let scan_end = n.min(i + target_chunk);
             let mut found = false;
             for j in scan_start..scan_end {
-                if j == 0 { continue; }
+                if j == 0 {
+                    continue;
+                }
                 if !frozen::frozen_set_contains(merge_left, tokens[j - 1].as_bytes())
                     || !frozen::frozen_set_contains(merge_right, tokens[j].as_bytes())
                 {
@@ -216,7 +223,9 @@ impl HfTokenizer {
                     break;
                 }
             }
-            if !found { break; }
+            if !found {
+                break;
+            }
         }
         if start < n {
             total += self.bpe_merge_count(&tokens[start..]);
@@ -225,16 +234,16 @@ impl HfTokenizer {
     }
 
     fn bpe_merge_count(&self, initial: &[String]) -> usize {
-        if initial.is_empty() { return 0; }
+        if initial.is_empty() {
+            return 0;
+        }
         let n = initial.len();
-        if n == 1 { return 1; }
+        if n == 1 {
+            return 1;
+        }
 
         let merges_table = &self.data[self.merges_off..];
 
-        // Lay out all initial tokens contiguously in a byte buffer so that
-        // adjacent tokens in the linked list are adjacent in memory.  Merging
-        // two neighbors then becomes a zero-copy range extension -- no format!
-        // allocation -- matching the pattern used in tiktoken.rs.
         let total_bytes: usize = initial.iter().map(|s| s.len()).sum();
         let mut buf = Vec::with_capacity(total_bytes);
         let mut parts: Vec<(usize, usize)> = Vec::with_capacity(n);
@@ -247,19 +256,24 @@ impl HfTokenizer {
         let mut next: Vec<usize> = (1..=n).collect();
         let mut prev: Vec<usize> = Vec::with_capacity(n);
         prev.push(usize::MAX);
-        for i in 1..n { prev.push(i - 1); }
+        for i in 1..n {
+            prev.push(i - 1);
+        }
         let mut alive = vec![true; n];
-        let mut gen: Vec<u32> = vec![0; n];
+        let mut generation: Vec<u32> = vec![0; n];
         let mut heap = std::collections::BinaryHeap::new();
 
         let pair_rank = |i: usize, parts: &[(usize, usize)], next: &[usize]| -> Option<u64> {
             let j = next[i];
-            if j >= n { return None; }
+            if j >= n {
+                return None;
+            }
             frozen::frozen_map_get_pair(
                 merges_table,
                 &buf[parts[i].0..parts[i].1],
                 &buf[parts[j].0..parts[j].1],
-            ).map(|r| r as u64)
+            )
+            .map(|r| r as u64)
         };
 
         for i in 0..n - 1 {
@@ -271,9 +285,13 @@ impl HfTokenizer {
         let mut count = n;
 
         while let Some(std::cmp::Reverse((rank, i, g))) = heap.pop() {
-            if !alive[i] || gen[i] != g { continue; }
+            if !alive[i] || generation[i] != g {
+                continue;
+            }
             let j = next[i];
-            if j >= n || !alive[j] { continue; }
+            if j >= n || !alive[j] {
+                continue;
+            }
 
             let current_rank = match frozen::frozen_map_get_pair(
                 merges_table,
@@ -283,26 +301,30 @@ impl HfTokenizer {
                 Some(r) => r as u64,
                 None => continue,
             };
-            if current_rank != rank { continue; }
+            if current_rank != rank {
+                continue;
+            }
 
             parts[i].1 = parts[j].1;
-            gen[i] += 1;
+            generation[i] += 1;
 
             alive[j] = false;
             let k = next[j];
             next[i] = k;
-            if k < n { prev[k] = i; }
+            if k < n {
+                prev[k] = i;
+            }
             count -= 1;
 
             if prev[i] != usize::MAX && alive[prev[i]] {
                 let p = prev[i];
                 if let Some(r) = pair_rank(p, &parts, &next) {
-                    heap.push(std::cmp::Reverse((r, p, gen[p])));
+                    heap.push(std::cmp::Reverse((r, p, generation[p])));
                 }
             }
             if next[i] < n {
                 if let Some(r) = pair_rank(i, &parts, &next) {
-                    heap.push(std::cmp::Reverse((r, i, gen[i])));
+                    heap.push(std::cmp::Reverse((r, i, generation[i])));
                 }
             }
         }

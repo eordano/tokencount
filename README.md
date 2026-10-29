@@ -15,8 +15,8 @@ compiled into it -- no runtime data files, no model downloads, no network.
 Pick whichever line you already have a package manager for:
 
 ```bash
-npx tokencount --help                 # run it, install nothing
-npm install -g tokencount             # macOS, Linux, Windows
+pnpm dlx tokencount --help            # run it, install nothing
+pnpm add -g tokencount                # macOS, Linux, Windows (npm registry)
 brew install eordano/tap/tokencount   # macOS, Linux
 ```
 
@@ -52,19 +52,14 @@ nix run github:eordano/tokencount -- --help
 
 Or take an archive straight off the
 [releases page](https://github.com/eordano/tokencount/releases) and check it
-yourself. Prebuilt binaries are published for five targets -- x86_64 and
-aarch64 Linux (static musl), Intel and Apple Silicon macOS, x86_64 Windows --
-each listed in `SHA256SUMS` and covered by a Sigstore-signed
-[build-provenance attestation](https://docs.github.com/actions/security-for-github-actions/using-artifact-attestations/using-artifact-attestations-to-establish-provenance-for-builds):
+yourself. Prebuilt binaries cover five targets -- x86_64 and aarch64 Linux
+(static musl), Intel and Apple Silicon macOS, x86_64 Windows -- each listed in
+`SHA256SUMS` and covered by a Sigstore-signed build-provenance attestation
+proving it came out of this repository's release workflow, untouched:
 
 ```bash
 gh attestation verify tokencount-1.0.1-aarch64-apple-darwin.tar.gz --repo eordano/tokencount
 ```
-
-That proves the file came out of this repository's release workflow, on a
-GitHub-hosted runner, from a named commit -- and has not been touched since.
-No long-lived credential is involved anywhere in publishing: the workflow signs
-with a short-lived OIDC identity, and npm is published the same way.
 
 **[docs/INSTALL.md](https://github.com/eordano/tokencount/blob/main/docs/INSTALL.md)**
 has per-platform detail, the full verification sequence, upgrade/uninstall for
@@ -118,7 +113,7 @@ diffs with token deltas. **Token overlay** visualizes boundaries on your text.
 Single self-contained HTML with all models inlined -- works from `file:///`:
 
 ```bash
-npm install && npm run build:offline
+pnpm install && pnpm run build:offline
 ```
 
 Produces `dist/tokencount.html`. Pre-built bundles on
@@ -131,7 +126,7 @@ It keeps its model data in files alongside it, and boots slower than the Rust
 CLI. Pre-built as `tokencount-cli.tar.gz` on releases, or:
 
 ```bash
-npm run build:cli
+pnpm run build:cli
 
 echo "Hello world" | dist/tokencount.mjs   # default: Claude
 dist/tokencount.mjs -m openai src/*.js     # specific model
@@ -172,10 +167,10 @@ Claude-only binary. See
 [Screenshot viewer](https://tokencount.eordano.com/tests/screenshots/viewer.html) -- auto-captured from CI (desktop + mobile).
 
 ```bash
-npm install
-npx playwright test   # dev server E2E (desktop + mobile)
-npm run test:bundle   # offline bundle
-npm run test:cli      # CLI integration
+pnpm install
+pnpm exec playwright test   # dev server E2E (desktop + mobile)
+pnpm run test:bundle        # offline bundle
+pnpm run test:cli           # CLI integration
 ```
 
 ### Nix

@@ -154,7 +154,10 @@ fn load_model(name: &str) -> Tokenizer {
         }
         model => {
             let data = embedded_data(model).unwrap_or_else(|| {
-                eprintln!("Error: {} model not embedded (build with TOKEN_COUNT_MODELS)", model);
+                eprintln!(
+                    "Error: {} model not embedded (build with TOKEN_COUNT_MODELS)",
+                    model
+                );
                 std::process::exit(1);
             });
             match bpe::HfTokenizer::from_frozen(data) {
@@ -331,10 +334,8 @@ fn expand_paths(
                     files.push(f);
                 }
             }
-        } else if path.is_file() {
-            if !is_binary(&path) {
-                files.push(path);
-            }
+        } else if path.is_file() && !is_binary(&path) {
+            files.push(path);
         }
     }
     files
@@ -350,7 +351,13 @@ fn base64url_encode(data: &[u8]) -> String {
         .to_string()
 }
 
-fn build_share_url(text_a: &str, text_b: &str, model: &str, count_a: usize, count_b: usize) -> String {
+fn build_share_url(
+    text_a: &str,
+    text_b: &str,
+    model: &str,
+    count_a: usize,
+    count_b: usize,
+) -> String {
     let mut obj = serde_json::json!({ "a": text_a, "b": text_b });
     if model != "claude" {
         obj["m"] = serde_json::json!(model);
@@ -446,10 +453,7 @@ fn main() {
             .first()
             .and_then(|i| i.name.as_deref())
             .unwrap_or("A");
-        let label_b = inputs
-            .get(1)
-            .and_then(|i| i.name.as_deref())
-            .unwrap_or("B");
+        let label_b = inputs.get(1).and_then(|i| i.name.as_deref()).unwrap_or("B");
 
         let model_name = &args.model;
         let tok = &tokenizers[0].1;
@@ -466,10 +470,7 @@ fn main() {
         eprint!("{}", format_line(&count_a.to_string(), label_a));
         if inputs.len() > 1 {
             eprint!("{}", format_line(&count_b.to_string(), label_b));
-            eprint!(
-                "{}",
-                format_line(&format!("{}{}", sign, delta), "delta")
-            );
+            eprint!("{}", format_line(&format!("{}{}", sign, delta), "delta"));
         }
         eprintln!();
 
@@ -482,13 +483,17 @@ fn main() {
 
     if args.all {
         let count_all = |input: &Input| -> Vec<usize> {
-            tokenizers.iter().map(|(_, tok)| tok.count_tokens(&input.text)).collect()
+            tokenizers
+                .iter()
+                .map(|(_, tok)| tok.count_tokens(&input.text))
+                .collect()
         };
         let results: Vec<Vec<usize>> = if use_parallel {
             std::thread::scope(|s| {
-                let handles: Vec<_> = inputs.iter().map(|input| {
-                    s.spawn(|| count_all(input))
-                }).collect();
+                let handles: Vec<_> = inputs
+                    .iter()
+                    .map(|input| s.spawn(|| count_all(input)))
+                    .collect();
                 handles.into_iter().map(|h| h.join().unwrap()).collect()
             })
         } else {
@@ -508,9 +513,10 @@ fn main() {
         let count_one = |input: &Input| tok.count_tokens(&input.text);
         let counts: Vec<usize> = if use_parallel {
             std::thread::scope(|s| {
-                let handles: Vec<_> = inputs.iter().map(|input| {
-                    s.spawn(|| count_one(input))
-                }).collect();
+                let handles: Vec<_> = inputs
+                    .iter()
+                    .map(|input| s.spawn(|| count_one(input)))
+                    .collect();
                 handles.into_iter().map(|h| h.join().unwrap()).collect()
             })
         } else {
@@ -528,10 +534,7 @@ fn main() {
         } else if inputs.len() == 1 {
             print!(
                 "{}",
-                format_line(
-                    &total.to_string(),
-                    inputs[0].name.as_deref().unwrap_or("")
-                )
+                format_line(&total.to_string(), inputs[0].name.as_deref().unwrap_or(""))
             );
         }
     }

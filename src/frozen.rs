@@ -1,10 +1,10 @@
 const FNV_OFFSET: u64 = 0xcbf29ce484222325;
 const FNV_PRIME: u64 = 0x100000001b3;
 
-const MAP_HEADER: usize = 12; // 3 x u32
-const MAP_SLOT: usize = 18; // u64 + u32 + u16 + u32
+const MAP_HEADER: usize = 12;
+const MAP_SLOT: usize = 18;
 const SET_HEADER: usize = 12;
-const SET_SLOT: usize = 14; // u64 + u32 + u16
+const SET_SLOT: usize = 14;
 
 /// FNV-1a hash, forced to odd (never zero).
 ///
@@ -18,7 +18,7 @@ pub fn fnv_hash(data: &[u8]) -> u64 {
         h ^= b as u64;
         h = h.wrapping_mul(FNV_PRIME);
     }
-    h | 1 // never zero -- 0 is the empty-slot sentinel
+    h | 1
 }
 
 /// FNV-1a hash of a NUL-separated pair, forced to odd (never zero).
@@ -30,14 +30,13 @@ pub fn fnv_hash_pair(a: &[u8], b: &[u8]) -> u64 {
         h ^= byte as u64;
         h = h.wrapping_mul(FNV_PRIME);
     }
-    // NUL separator
     h ^= 0u64;
     h = h.wrapping_mul(FNV_PRIME);
     for &byte in b {
         h ^= byte as u64;
         h = h.wrapping_mul(FNV_PRIME);
     }
-    h | 1 // never zero -- 0 is the empty-slot sentinel
+    h | 1
 }
 
 /// FNV-1a hash of a concatenation `a || b` (no separator), forced to odd.
@@ -53,7 +52,7 @@ pub fn fnv_hash_concat(a: &[u8], b: &[u8]) -> u64 {
         h ^= byte as u64;
         h = h.wrapping_mul(FNV_PRIME);
     }
-    h | 1 // never zero -- 0 is the empty-slot sentinel
+    h | 1
 }
 
 /// Lemire fast range reduction: maps a u64 hash into [0, n) via
@@ -91,7 +90,9 @@ pub fn frozen_map_get_pair(table: &[u8], left: &[u8], right: &[u8]) -> Option<u3
             }
         }
         idx += 1;
-        if idx == num_slots { idx = 0; }
+        if idx == num_slots {
+            idx = 0;
+        }
     }
     None
 }
@@ -124,7 +125,9 @@ pub fn frozen_map_get_concat(table: &[u8], a: &[u8], b: &[u8]) -> Option<u32> {
             }
         }
         idx += 1;
-        if idx == num_slots { idx = 0; }
+        if idx == num_slots {
+            idx = 0;
+        }
     }
     None
 }
@@ -151,7 +154,9 @@ pub fn frozen_set_contains(table: &[u8], key: &[u8]) -> bool {
             }
         }
         idx += 1;
-        if idx == num_slots { idx = 0; }
+        if idx == num_slots {
+            idx = 0;
+        }
     }
     false
 }

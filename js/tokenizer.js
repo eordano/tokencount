@@ -107,7 +107,7 @@ export function encodeTokens(text, name) {
 function loadHfLibrary() {
   if (state.hfLib) return Promise.resolve(state.hfLib);
   if (state.hfLibPromise) return state.hfLibPromise;
-  state.hfLibPromise = import("https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1")
+  state.hfLibPromise = import("https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.0")
     .then((mod) => {
       state.hfLib = mod.AutoTokenizer;
       return state.hfLib;
@@ -133,7 +133,7 @@ export function loadModel(name, onReady) {
 
   let promise;
   if (profile.type === "gpt") {
-    promise = import("https://esm.sh/gpt-tokenizer@3.4.0/encoding/o200k_base")
+    promise = import("https://esm.sh/gpt-tokenizer@4.0.0/encoding/o200k_base")
       .then((mod) => {
         state.gpt = { encode: mod.encode, decode: mod.decode };
         state.status[name] = "ready";

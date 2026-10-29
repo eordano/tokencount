@@ -59,24 +59,23 @@ impl TiktokenTokenizer {
             return 1;
         }
 
-        // Each part is a [start, end) byte range into `piece`.
         let mut parts: Vec<(usize, usize)> = (0..n).map(|i| (i, i + 1)).collect();
 
-        // Linked list for O(1) neighbor traversal after merges.
         let mut next: Vec<usize> = (1..=n).collect();
-        let mut prev: Vec<usize> = (0..n).map(|i| if i == 0 { usize::MAX } else { i - 1 }).collect();
+        let mut prev: Vec<usize> = (0..n)
+            .map(|i| if i == 0 { usize::MAX } else { i - 1 })
+            .collect();
         let mut alive = vec![true; n];
 
-        // Generation counters to cheaply invalidate stale heap entries.
-        let mut gen: Vec<u32> = vec![0; n];
+        let mut generation: Vec<u32> = vec![0; n];
 
-        // Min-heap of (rank, part_index, generation_at_push).
         let mut heap: BinaryHeap<Reverse<(u32, usize, u32)>> = BinaryHeap::with_capacity(n);
 
-        // Helper: rank of merging parts[i] with its right neighbor.
         let pair_rank = |i: usize, parts: &[(usize, usize)], next: &[usize]| -> Option<u32> {
             let j = next[i];
-            if j >= n { return None; }
+            if j >= n {
+                return None;
+            }
             frozen::frozen_map_get_concat(
                 self.data,
                 &piece[parts[i].0..parts[i].1],
@@ -84,7 +83,6 @@ impl TiktokenTokenizer {
             )
         };
 
-        // Seed the heap with all adjacent pairs.
         for i in 0..n - 1 {
             if let Some(rank) = pair_rank(i, &parts, &next) {
                 heap.push(Reverse((rank, i, 0)));
@@ -94,11 +92,14 @@ impl TiktokenTokenizer {
         let mut count = n;
 
         while let Some(Reverse((rank, i, g))) = heap.pop() {
-            if !alive[i] || gen[i] != g { continue; }
+            if !alive[i] || generation[i] != g {
+                continue;
+            }
             let j = next[i];
-            if j >= n || !alive[j] { continue; }
+            if j >= n || !alive[j] {
+                continue;
+            }
 
-            // Verify the rank is still current (parts[i] may have grown).
             let current_rank = match frozen::frozen_map_get_concat(
                 self.data,
                 &piece[parts[i].0..parts[i].1],
@@ -107,28 +108,29 @@ impl TiktokenTokenizer {
                 Some(r) => r,
                 None => continue,
             };
-            if current_rank != rank { continue; }
+            if current_rank != rank {
+                continue;
+            }
 
-            // Merge: extend i to cover j's byte range, remove j from the list.
             parts[i].1 = parts[j].1;
-            gen[i] += 1;
+            generation[i] += 1;
             alive[j] = false;
             let k = next[j];
             next[i] = k;
-            if k < n { prev[k] = i; }
+            if k < n {
+                prev[k] = i;
+            }
             count -= 1;
 
-            // Re-evaluate the pair (prev[i], i) -- left neighbor changed.
             if prev[i] != usize::MAX && alive[prev[i]] {
                 let p = prev[i];
                 if let Some(r) = pair_rank(p, &parts, &next) {
-                    heap.push(Reverse((r, p, gen[p])));
+                    heap.push(Reverse((r, p, generation[p])));
                 }
             }
-            // Re-evaluate the pair (i, next[i]) -- i's content changed.
             if next[i] < n {
                 if let Some(r) = pair_rank(i, &parts, &next) {
-                    heap.push(Reverse((r, i, gen[i])));
+                    heap.push(Reverse((r, i, generation[i])));
                 }
             }
         }

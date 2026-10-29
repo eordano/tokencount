@@ -5,14 +5,13 @@ compiled into it, so there are no runtime data files, no model downloads, no
 network access and no dependencies -- you copy one file and it works, offline,
 in under a millisecond.
 
-Prebuilt binaries are published for five targets. Every one of them is
-checksummed and carries a GitHub build-provenance attestation, so you can prove
-the file you downloaded came out of this repository's release workflow before
-you run it. See [Verify what you downloaded](#verify-what-you-downloaded).
+Prebuilt binaries are published for five targets, each checksummed and carrying
+a GitHub build-provenance attestation -- see
+[Verify what you downloaded](#verify-what-you-downloaded).
 
 - [Supported platforms](#supported-platforms)
 - [Which method should I use?](#which-method-should-i-use)
-- [npm](#npm) · [Homebrew](#homebrew) · [Scoop](#scoop-windows) ·
+- [npm registry (pnpm)](#npm-registry-pnpm) · [Homebrew](#homebrew) · [Scoop](#scoop-windows) ·
   [WinGet](#winget-windows)
 - [Shell installer](#shell-installer-macos-and-linux) ·
   [PowerShell installer](#powershell-installer-windows)
@@ -47,7 +46,7 @@ native `aarch64-pc-windows-msvc` build yet.
 
 | Method | Platforms | Verifies the download | Notes |
 |---|---|---|---|
-| [npm](#npm) | all five | npm registry integrity + provenance | no Node runtime cost; the binary is native |
+| [npm registry (pnpm)](#npm-registry-pnpm) | all five | npm registry integrity + provenance | no Node runtime cost; the binary is native |
 | [Homebrew](#homebrew) | macOS, Linux | formula checksum | `brew upgrade` keeps it current |
 | [Scoop](#scoop-windows) / [WinGet](#winget-windows) | Windows | manifest checksum | integrates with the OS package manager |
 | [Shell / PowerShell installer](#shell-installer-macos-and-linux) | macOS, Linux, Windows | SHA256 against `SHA256SUMS` | no package manager needed |
@@ -58,17 +57,19 @@ native `aarch64-pc-windows-msvc` build yet.
 There is deliberately no `cargo install tokencount` --
 [here is why](#why-there-is-no-cargo-install-tokencount).
 
-## npm
+## npm registry (pnpm)
+
+The packages live on the npm registry; install them with pnpm:
 
 ```bash
-npx tokencount --help          # run it without installing
-npm install -g tokencount      # install it on PATH
+pnpm dlx tokencount --help     # run it without installing
+pnpm add -g tokencount         # install it on PATH
 ```
 
 This does not run a Node tokenizer. The `tokencount` package is a tiny launcher
 that execs the native binary and forwards stdio, signals and the exit status;
-the binary itself arrives in one platform-specific optional dependency, and npm
-installs only the one matching your machine:
+the binary itself arrives in one platform-specific optional dependency, and the
+package manager installs only the one matching your machine:
 
 | `process.platform` / `process.arch` | Package |
 |---|---|
@@ -79,29 +80,27 @@ installs only the one matching your machine:
 | `win32` / `x64` | `@tokencount/win32-x64` |
 
 There is no `postinstall` script and nothing is fetched after install: the
-binary ships inside the package, so `npm ci --ignore-scripts` and offline caches
-work normally. Node 18 or newer is required to run the launcher.
+binary ships inside the package, so `pnpm install --ignore-scripts` (pnpm runs no
+dependency build scripts by default anyway) and offline caches work normally. Node 18 or newer is required to run the launcher.
 
 Every version after the first is published from the release workflow with
-`npm publish --provenance` over OIDC trusted publishing -- no stored npm token
--- so it carries its own npm provenance statement, visible on the package page
-and checkable in a project that depends on it:
+`pnpm publish --provenance` over npm's OIDC trusted publishing -- no stored npm
+token -- so it carries its own npm provenance statement, visible on the package
+page. A project that depends on it can check the registry signatures with:
 
 ```bash
-npm audit signatures
+pnpm audit signatures
 ```
 
-The *first* version of each of the six names had to be published by hand: npm
-configures a trusted publisher on a package's own settings page, so the package
-must exist before the workflow can be trusted with it. Those six bootstrap
-publishes are the only ones that used a token and the only ones without
-provenance. `RELEASE-PACKAGING.md` records the procedure.
+The *first* version of each of the six names was published by hand with a token
+and carries no provenance (npm only trusts a workflow for a package that already
+exists); `RELEASE-PACKAGING.md` records the procedure.
 
 To point the launcher at a binary you installed some other way -- a local build,
 or a binary you verified by hand:
 
 ```bash
-TOKENCOUNT_BINARY_PATH=/path/to/tokencount npx tokencount --help
+TOKENCOUNT_BINARY_PATH=/path/to/tokencount pnpm dlx tokencount --help
 ```
 
 ## Homebrew
@@ -120,10 +119,9 @@ brew uninstall tokencount
 ```
 
 The formula lives in the `eordano/homebrew-tap` repository, not in this one, so
-it can trail a release by a little -- and until that repository exists and has
-been populated for the first time, `brew install` will report no available
-formula. If `brew install` cannot find it, the
-release archives are already up on the
+it can trail a release -- and until that repository is populated for the first
+time, `brew install` reports no available formula. In that case the release
+archives are already on the
 [releases page](https://github.com/eordano/tokencount/releases) and the
 [shell installer](#shell-installer-macos-and-linux) will fetch the newest one.
 
@@ -150,10 +148,9 @@ winget upgrade eordano.tokencount
 winget uninstall eordano.tokencount
 ```
 
-The Scoop manifest and the WinGet manifest are likewise maintained outside this
-repository -- in `eordano/scoop-bucket` and in Microsoft's `winget-pkgs`, whose
-submissions are reviewed before they go live. Either can lag a release by a day
-or two, and neither works at all until that first bucket/PR lands. When it
+Both manifests are likewise maintained outside this repository -- in
+`eordano/scoop-bucket` and in Microsoft's reviewed `winget-pkgs` -- so either
+can lag a release, and neither works until the first bucket/PR lands. When it
 matters, use the [PowerShell installer](#powershell-installer-windows), which
 reads the release directly.
 
@@ -318,18 +315,16 @@ Expand-Archive -Path $Asset -DestinationPath .
 ### Checksums
 
 `SHA256SUMS` is a single coreutils-format file covering every archive in the
-release. It is a convenience, not the trust anchor: anyone who can replace an
-archive on the release can replace the checksum file next to it. Use it to
-catch a corrupted or truncated download, and use the attestation below to
-catch a substituted one.
+release. It catches a corrupted or truncated download, not a substituted one --
+anyone who can replace an archive can replace the checksum file next to it; the
+attestation below covers that.
 
 ### Build provenance
 
 Every release archive is covered by a
 [GitHub build-provenance attestation](https://docs.github.com/actions/security-for-github-actions/using-artifact-attestations/using-artifact-attestations-to-establish-provenance-for-builds)
 -- a Sigstore-signed, transparency-logged statement generated inside the release
-workflow using a short-lived OIDC identity. There is no long-lived signing key
-to leak.
+workflow with a short-lived OIDC identity; no long-lived signing key exists.
 
 ```bash
 gh attestation verify tokencount-1.0.1-x86_64-unknown-linux-musl.tar.gz \
@@ -360,16 +355,13 @@ gh attestation verify tokencount-1.0.1-x86_64-unknown-linux-musl.tar.gz \
 
 ### What the attestation proves, and what it does not
 
-It proves that this exact byte sequence was produced by the
-`.github/workflows/release.yml` workflow in `eordano/tokencount`, running on a
-GitHub-hosted runner, from a named commit and tag -- and that it has not been
-altered since. If someone swaps an asset on the release page, or rebuilds one
-on a laptop, verification fails. Note that verification works on the file's
-digest, so it does not depend on `SHA256SUMS` being honest.
-
-It does not prove the source code is correct, safe, or free of bugs, and it
-says nothing about the upstream tokenizer tables the build embeds. It is a
-statement about *origin*, not about *quality*.
+It proves this exact byte sequence was produced by
+`.github/workflows/release.yml` in `eordano/tokencount`, on a GitHub-hosted
+runner, from a named commit and tag, and has not been altered since -- a
+swapped asset or a laptop rebuild fails verification, independently of
+`SHA256SUMS` being honest. It does not prove the source or the embedded
+upstream tokenizer tables are correct or safe: it is a statement about
+*origin*, not *quality*.
 
 ## Building from source
 
@@ -424,23 +416,22 @@ TOKENCOUNT_ALLOW_PARTIAL=1 cargo build --release --locked
 
 ## The other artifacts
 
-The CLI is one of four ways to use tokencount, and the others need no install
-at all:
+The Rust CLI (this document) is one of four ways to use tokencount; the others
+need no install:
 
 - **Web app** -- <https://tokencount.eordano.com>
 - **Offline single-file HTML** -- `tokencount-offline.tar.gz` on the release,
-  or `npm install && npm run build:offline`. Opens from `file:///` with every
+  or `pnpm install && pnpm run build:offline`. Opens from `file:///` with every
   model inlined.
 - **Node.js CLI** -- `tokencount-cli.tar.gz` on the release, or
-  `npm run build:cli`. Useful where a native binary is awkward; slower to boot
-  than the Rust CLI, and it keeps its model data in files next to it.
-- **Rust CLI** -- this document.
+  `pnpm run build:cli`. Useful where a native binary is awkward; slower to boot,
+  and it keeps its model data in files next to it.
 
 ## Upgrading and uninstalling
 
 | Installed with | Upgrade | Remove |
 |---|---|---|
-| npm | `npm install -g tokencount@latest` | `npm uninstall -g tokencount` |
+| pnpm | `pnpm add -g tokencount@latest` | `pnpm remove -g tokencount` |
 | Homebrew | `brew upgrade eordano/tap/tokencount` | `brew uninstall tokencount` |
 | Scoop | `scoop update tokencount` | `scoop uninstall tokencount` |
 | WinGet | `winget upgrade eordano.tokencount` | `winget uninstall eordano.tokencount` |
@@ -459,7 +450,7 @@ rebuild with the model directory set. See
 
 **macOS: "cannot be opened because the developer cannot be verified"** -- the
 release binaries are not Apple-signed or notarised. Files downloaded with
-`curl`, `npm`, `brew` or the install script are not quarantined and are
+`curl`, `pnpm`, `brew` or the install script are not quarantined and are
 unaffected; a file downloaded through a browser is. Verify the download first,
 then clear the quarantine attribute:
 
@@ -480,7 +471,7 @@ directory is not on your `PATH`. The shell installer prints a warning when this
 happens; add `$HOME/.local/bin` to `PATH` in your shell profile. On Windows,
 open a new terminal so the updated user `PATH` is picked up.
 
-**npm: "unsupported platform"** -- there is no prebuilt binary for your
+**pnpm: "unsupported platform"** -- there is no prebuilt binary for your
 platform/arch pair (see [Supported platforms](#supported-platforms)). Build
 with [Nix](#nix) or [from source](#building-from-source), then point the
 launcher at it with `TOKENCOUNT_BINARY_PATH`.

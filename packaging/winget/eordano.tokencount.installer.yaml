@@ -10,9 +10,6 @@ Commands:
 Installers:
 - Architecture: x64
   InstallerUrl: https://github.com/eordano/tokencount/releases/download/v1.0.1/tokencount-1.0.1-x86_64-pc-windows-msvc.zip
-  # Placeholder in this template; scripts/build-packaging-manifests.mjs fills it
-  # in from the release's SHA256SUMS. Quoted so YAML keeps it a string: an
-  # all-digit digest would otherwise parse as an integer.
   InstallerSha256: "0000000000000000000000000000000000000000000000000000000000000000"
   NestedInstallerFiles:
   - RelativeFilePath: tokencount.exe

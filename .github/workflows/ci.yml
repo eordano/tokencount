@@ -18,15 +18,18 @@ jobs:
     name: E2E tests (dev server)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0, pnpm version from packageManager
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: "20"
+          cache: pnpm
 
-      - run: npm ci --ignore-scripts
+      - run: pnpm install --frozen-lockfile --ignore-scripts
 
-      - run: npx playwright install --with-deps chromium
+      - run: pnpm exec playwright install --with-deps chromium
 
       - name: Install CJK fonts
         run: sudo apt-get install -y fonts-noto-cjk
@@ -36,20 +39,20 @@ jobs:
         run: echo "path=$(node -e "const {chromium}=require('@playwright/test');console.log(chromium.executablePath())")" >> "$GITHUB_OUTPUT"
 
       - name: Run E2E tests
-        run: npx playwright test
+        run: pnpm exec playwright test
         env:
           BROWSER_PATH: ${{ steps.browser-path.outputs.path }}
 
       - name: Upload screenshots
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: screenshots
           path: tests/screenshots/
 
       - name: Upload test results
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: test-results
           path: test-results/
@@ -58,13 +61,16 @@ jobs:
     name: CLI tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0, pnpm version from packageManager
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: "20"
+          cache: pnpm
 
-      - run: npm ci --ignore-scripts
+      - run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Build CLI
         run: node scripts/build-cli.mjs
@@ -73,21 +79,24 @@ jobs:
         run: echo "Hello, world!" | ./dist/tokencount.mjs
 
       - name: Run CLI tests
-        run: npm run test:cli
+        run: pnpm run test:cli
 
   test-bundle:
     name: E2E tests (offline bundle)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0, pnpm version from packageManager
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: "20"
+          cache: pnpm
 
-      - run: npm ci --ignore-scripts
+      - run: pnpm install --frozen-lockfile --ignore-scripts
 
-      - run: npx playwright install --with-deps chromium
+      - run: pnpm exec playwright install --with-deps chromium
 
       - name: Install CJK fonts
         run: sudo apt-get install -y fonts-noto-cjk
@@ -100,21 +109,17 @@ jobs:
         run: echo "path=$(node -e "const {chromium}=require('@playwright/test');console.log(chromium.executablePath())")" >> "$GITHUB_OUTPUT"
 
       - name: Run E2E tests against bundle
-        run: npx playwright test --config playwright.bundle.config.js
+        run: pnpm exec playwright test --config playwright.bundle.config.js
         env:
           BROWSER_PATH: ${{ steps.browser-path.outputs.path }}
 
       - name: Upload test results
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: bundle-test-results
           path: test-results/
 
-  # The Rust CLI is only ever compiled by release.yml, on a tag -- too late to
-  # learn that build.rs or Cargo.lock broke. `cargo check` is cheap, and one
-  # embedded table is enough to exercise the include_bytes! codegen on Windows,
-  # where an interpolated OUT_DIR would be re-parsed as escape sequences.
   rust:
     name: cargo check (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -124,15 +129,12 @@ jobs:
         os: [ubuntu-latest, windows-latest]
     env:
       TOKEN_COUNT_MODELS: models
-      # Only o200k_base.tiktoken is fetched here (3.4 MB, against ~90 MB for the
-      # full set), so the build is deliberately partial. release.yml fetches all
-      # eight and fails if any table is missing.
       TOKENCOUNT_ALLOW_PARTIAL: "1"
       CARGO_TERM_COLOR: always
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: "20"
 
@@ -160,14 +162,12 @@ jobs:
     name: Version and pin consistency
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: "20"
 
-      # Cargo.toml is the single source of truth for the version; these three
-      # catch the drift that would otherwise surface as a failed release.
       - name: Check
         run: |
           set -euo pipefail
@@ -186,20 +186,23 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0, pnpm version from packageManager
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: "20"
+          cache: pnpm
 
       - name: Install dependencies (skip browsers)
-        run: npm ci --ignore-scripts
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Build offline bundle
         run: node scripts/build-offline.mjs
 
       - name: Download test screenshots
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: screenshots
           path: tests/screenshots/
@@ -208,7 +211,7 @@ jobs:
         run: node scripts/build-screenshot-viewer.mjs
 
       - name: Deploy to GitHub Pages
-        uses: JamesIves/github-pages-deploy-action@d92aa235d04922e8f08b40ce78cc5442fcfbfa2f # v4
+        uses: JamesIves/github-pages-deploy-action@d92aa235d04922e8f08b40ce78cc5442fcfbfa2f
         with:
           branch: gh-pages
           folder: .

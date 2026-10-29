@@ -2,42 +2,11 @@
 import { execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import esbuild from "esbuild";
+import { DIST, HF_FILES, HF_REPO_MAP, ROOT, fetchHfText, shimPlugin } from "./build-common.mjs";
 
-const __filename = fileURLToPath(import.meta.url);
-const ROOT = path.resolve(path.dirname(__filename), "..");
 const TMP = path.join(ROOT, ".bundle-tmp");
-const DIST = path.join(ROOT, "dist");
-
-const HF_REPOS = [
-  "Xenova/gemma-2-tokenizer",
-  "deepseek-ai/DeepSeek-V3",
-  "Qwen/Qwen3-0.6B",
-  "MiniMaxAI/MiniMax-Text-01",
-  "Xenova/llama4-tokenizer",
-  "mistralai/Mistral-Nemo-Instruct-2407",
-  "Xenova/grok-1-tokenizer",
-];
-const HF_FILES = ["tokenizer.json", "tokenizer_config.json"];
-
-const onnxShimPlugin = {
-  name: "shims",
-  setup(build) {
-    build.onResolve({ filter: /^onnxruntime/ }, (args) => ({
-      path: args.path,
-      namespace: "shim",
-    }));
-    build.onResolve({ filter: /^sharp$/ }, (args) => ({
-      path: args.path,
-      namespace: "shim",
-    }));
-    build.onLoad({ filter: /.*/, namespace: "shim" }, () => ({
-      contents: "export default {}; export const env = { wasm: {} };",
-      loader: "js",
-    }));
-  },
-};
+const HF_REPOS = Object.keys(HF_REPO_MAP);
 
 function patchSource() {
   console.log("[1/6] Patching source for offline bundling...");
@@ -105,7 +74,7 @@ async function bundle() {
       "import.meta.url": JSON.stringify("https://offline.invalid/js/app.js"),
     },
     nodePaths: [path.join(ROOT, "node_modules")],
-    plugins: [onnxShimPlugin],
+    plugins: [shimPlugin()],
   });
 }
 
@@ -129,13 +98,7 @@ async function downloadModels() {
     for (const repo of HF_REPOS) {
       models[repo] = {};
       for (const file of HF_FILES) {
-        const url = `https://huggingface.co/${repo}/resolve/main/${file}`;
-        console.log(`  Fetching ${repo}/${file}...`);
-        const res = await fetch(url);
-        if (!res.ok) {
-          throw new Error(`Failed to fetch ${url}: ${res.status} ${res.statusText}`);
-        }
-        models[repo][file] = await res.json();
+        models[repo][file] = JSON.parse(await fetchHfText(repo, file));
       }
     }
   }

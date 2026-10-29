@@ -1,24 +1,5 @@
 name: Release
 
-# Cross-platform release for the native Rust CLI.
-#
-# Tag push (v*) -> builds the five supported targets, packages them under the
-# cargo-binstall default naming convention, attests build provenance, and
-# attaches everything to a DRAFT GitHub Release. A human publishes the draft,
-# which fires `release: published` and lets offline-bundle.yml append the Node
-# CLI and offline HTML assets and npm-publish.yml ship the npm packages.
-#
-# ORDER MATTERS. Push the tag first and let this workflow finish, THEN publish
-# the draft it created. Creating a release from the GitHub UI with a brand new
-# tag fires `push: tags` and `release: published` at the same instant, and
-# npm-publish.yml then sits waiting for archives that are still building.
-# RELEASE-PACKAGING.md has the runbook.
-#
-# No third-party actions beyond attest-build-provenance, no cargo cache, no
-# stored registry tokens: every release binary is built from a clean checkout
-# with --locked, and the only credential in play is the run-scoped GITHUB_TOKEN
-# plus OIDC for attestation.
-
 on:
   push:
     tags: ["v*"]
@@ -74,15 +55,11 @@ jobs:
             echo "publish=$publish"
           } >> "$GITHUB_OUTPUT"
 
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           ref: ${{ steps.ref.outputs.ref }}
           persist-credentials: false
 
-      # --locked is what the five build jobs use, so check it here: a Cargo.toml
-      # bumped without Cargo.lock otherwise fails all five, after the tag is
-      # already public. `cargo metadata` without --locked would silently refresh
-      # the lock in this checkout and hide the drift.
       - name: Read crate version and check it against the tag
         id: version
         env:
@@ -123,26 +100,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # musl, not gnu: the release binaries have to run on any distro,
-          # including ones older than the runner's glibc. The crate has no C
-          # dependencies (serde_json, fancy-regex, base64, unicode-normalization),
-          # so rustup's self-contained musl linking is enough -- no cross-rs,
-          # no container, no third-party action in the supply chain. The
-          # "statically linked" assertion below is what actually guarantees it.
           - target: x86_64-unknown-linux-musl
             os: ubuntu-24.04
             archive: tar.gz
             can_run: true
-          # Native arm64 Linux runner rather than a cross toolchain, so the
-          # binary is also smoke tested on the architecture it ships for.
           - target: aarch64-unknown-linux-musl
             os: ubuntu-24.04-arm
             archive: tar.gz
             can_run: true
-          # macos-latest is arm64, so this one is a cross-compile. Pure Rust,
-          # one universal SDK, no C deps -- it links fine, it just cannot be
-          # executed here, which is why the embedded-model check below does not
-          # depend on running the binary.
           - target: x86_64-apple-darwin
             os: macos-latest
             archive: tar.gz
@@ -151,11 +116,6 @@ jobs:
             os: macos-latest
             archive: tar.gz
             can_run: true
-          # crt-static: rustc links the MSVC CRT dynamically by default, which
-          # would make tokencount.exe need VCRUNTIME140.dll -- shipped by the
-          # Visual C++ redistributable, present on this runner but NOT on a
-          # clean Windows install. Every doc and manifest promises a single
-          # self-contained executable, so link it statically and assert it.
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             archive: zip
@@ -163,18 +123,16 @@ jobs:
             can_run: true
             rustflags: "-C target-feature=+crt-static"
     env:
-      # Relative on purpose: cargo runs build.rs with the package root as its
-      # working directory, and a relative path avoids Windows backslashes.
       TOKEN_COUNT_MODELS: models
       RUSTFLAGS: ${{ matrix.rustflags }}
       PKG: tokencount-${{ needs.prepare.outputs.version }}-${{ matrix.target }}
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           ref: ${{ needs.prepare.outputs.ref }}
           persist-credentials: false
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: "20"
 
@@ -187,11 +145,6 @@ jobs:
           rustup target add "${{ matrix.target }}"
           rustc -vV
 
-      # 8 of the 9 tokenizer tables are vendor files the repo does not carry,
-      # and build.rs compiles in whatever it finds under TOKEN_COUNT_MODELS.
-      # fetch-models.mjs pins each one by sha256 and cross-checks those pins
-      # against flake.nix, so an upstream file that moves fails the release
-      # instead of quietly changing what ships. No HuggingFace token needed.
       - name: Fetch tokenizer model data
         shell: bash
         run: node scripts/fetch-models.mjs "$TOKEN_COUNT_MODELS"
@@ -216,10 +169,6 @@ jobs:
         shell: bash
         run: cargo build --release --locked --target "${{ matrix.target }}"
 
-      # The authoritative check that this is not a Claude-only binary: build.rs
-      # writes one `Some(include_bytes!(...))` per embedded table into OUT_DIR.
-      # Works for cross-compiled targets too, since it inspects the build
-      # output rather than running the binary.
       - name: Verify all 9 tokenizers are embedded
         shell: bash
         run: |
@@ -250,10 +199,6 @@ jobs:
           # "static-pie linked" rather than "statically linked".
           file "$bin" | grep -Eq "static-pie linked|statically linked"
 
-      # A clean Windows install has the UCRT in-box but not VCRUNTIME140.dll.
-      # crt-static removes the import entirely; if the flag ever stops being
-      # applied, the DLL name reappears in the import table and this fails --
-      # on the runner, rather than on a user's machine.
       - name: Verify the Windows binary needs no VC++ redistributable
         if: matrix.target == 'x86_64-pc-windows-msvc'
         shell: pwsh
@@ -307,16 +252,13 @@ jobs:
           Compress-Archive -Path staging/* -DestinationPath "dist/$env:PKG.zip" -Force
           Get-ChildItem dist
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: release-asset-${{ matrix.target }}
           path: dist/tokencount-${{ needs.prepare.outputs.version }}-${{ matrix.target }}.${{ matrix.archive }}
           if-no-files-found: error
           retention-days: 7
 
-  # Deliberately separate from `publish`: a dry run needs the checksums but
-  # nothing here needs to write to the repository or mint an OIDC token, and a
-  # permission grant can only be narrowed per job, never per step.
   checksums:
     name: Checksums
     needs: [prepare, build]
@@ -324,7 +266,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           pattern: release-asset-*
           merge-multiple: true
@@ -344,16 +286,12 @@ jobs:
           sha256sum tokencount-* > SHA256SUMS
           cat SHA256SUMS
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: release-assets
           path: dist/
           if-no-files-found: error
 
-  # The tap, the bucket and microsoft/winget-pkgs are separate repositories, and
-  # pushing to them needs a cross-repository credential this project does not
-  # hold. So render the manifests with real digests and hand them to the
-  # operator as an artifact, rather than pretending the channels self-update.
   packaging:
     name: Render tap/bucket/winget manifests
     needs: [prepare, checksums]
@@ -363,12 +301,12 @@ jobs:
     env:
       VERSION: ${{ needs.prepare.outputs.version }}
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           ref: ${{ needs.prepare.outputs.ref }}
           persist-credentials: false
 
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: release-assets
           path: dist
@@ -383,7 +321,7 @@ jobs:
             --output dist/packaging/homebrew/tokencount.rb
           find dist/packaging -type f -print
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: packaging-manifests
           path: dist/packaging/
@@ -404,15 +342,13 @@ jobs:
       TAG: ${{ needs.prepare.outputs.tag }}
       VERSION: ${{ needs.prepare.outputs.version }}
     steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: release-assets
           path: dist
 
-      # One call covers every archive: the attestation subjects are the digests
-      # listed in SHA256SUMS.
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f
         with:
           subject-checksums: dist/SHA256SUMS
 

@@ -5,7 +5,7 @@
  * Exercises the launcher against a synthetic install tree: a fake platform
  * package standing in for the one the release workflow publishes.
  *
- * Run: npm run test:launcher
+ * Run: pnpm run test:launcher
  */
 
 const assert = require("node:assert");

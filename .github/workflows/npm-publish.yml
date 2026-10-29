@@ -1,28 +1,5 @@
 name: Publish to npm
 
-# Ships the native Rust CLI to npm as six packages: one per release target,
-# plus the root "tokencount" package that picks the right one at run time.
-# Binaries are not built here -- they come from the archives attached to the
-# release, checked against its SHA256SUMS *and* against the build-provenance
-# attestation release.yml signed, which SHA256SUMS alone cannot substitute for
-# (an attacker who can replace an asset can replace the checksum file too).
-#
-# ORDER MATTERS. This fires on `release: published`, and expects the Rust
-# archives to already be attached -- which is what happens when you push the
-# tag, let release.yml finish, and then publish the draft it created. Creating
-# a release from the GitHub UI with a brand new tag instead fires both events
-# at once, and this workflow will sit in "Wait for the release archives" while
-# release.yml is still building. It waits an hour; if that is not enough,
-# re-run it by hand with workflow_dispatch. RELEASE-PACKAGING.md has the
-# runbook.
-#
-# ONE-TIME BOOTSTRAP. Publishing here is OIDC trusted publishing with no stored
-# token, and npm can only be told to trust a workflow for a package that
-# already exists. The first version of each of the six names therefore has to
-# be published by hand, and the trusted publisher configured on npmjs.com
-# afterwards. The preflight step below fails with those instructions rather
-# than letting the first run die on an opaque authentication error.
-
 on:
   release:
     types: [published]
@@ -33,7 +10,7 @@ on:
         required: true
         type: string
       dry_run:
-        description: "Run npm publish --dry-run instead of publishing"
+        description: "Run pnpm publish --dry-run instead of publishing"
         type: boolean
         default: false
 
@@ -47,10 +24,6 @@ concurrency:
 env:
   TAG: ${{ github.event.release.tag_name || inputs.tag }}
   DRY_RUN: ${{ inputs.dry_run && '--dry-run' || '' }}
-  # Pinned like every action SHA in this repo: an unpinned `npm@latest` would be
-  # the largest mutable input in a job that holds id-token: write and is about
-  # to publish six packages. Trusted publishing needs npm >= 11.5.1.
-  NPM_VERSION: "12.0.2"
 
 jobs:
   platforms:
@@ -60,21 +33,20 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           ref: ${{ github.event.release.tag_name || inputs.tag }}
           persist-credentials: false
 
-      # No registry-url: setup-node would write an .npmrc pinning
-      # //registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}, and with no such
-      # variable set npm would see the literal string as a credential. OIDC
-      # publishing targets registry.npmjs.org by default.
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      # An explicit version, because a re-run may check out a tag older than the
+      # packageManager field; keep it equal to package.json's packageManager.
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: 12.9.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: "22"
-
-      - name: Install the pinned npm
-        run: npm install -g "npm@$NPM_VERSION"
 
       - name: Resolve version and check it against the tag
         id: version
@@ -86,16 +58,13 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-      # Trusted publishing cannot create a package, only publish a new version
-      # of one. Say so here instead of failing halfway through the loop below
-      # with an authentication error that does not name the real problem.
       - name: Preflight -- every package must already exist on the registry
         if: ${{ !inputs.dry_run }}
         run: |
           set -uo pipefail
           missing=""
           for name in $(node -p "require('./npm/lib/targets.json').targets.map(t => t.package).join(' ')") tokencount; do
-            if ! npm view "$name" version >/dev/null 2>&1; then
+            if ! pnpm view "$name" version >/dev/null 2>&1; then
               missing="$missing $name"
             fi
           done
@@ -133,7 +102,7 @@ jobs:
             console.log("SHA256SUMS");
           ' > /tmp/expected-assets
           # 120 x 30s = one hour. release.yml builds five targets from scratch
-          # with lto = true and codegen-units = 1; the Windows leg in particular
+          # with lto = true and codegen-units = 16; the Windows leg in particular
           # is slow. Overshooting costs nothing, timing out costs a manual re-run.
           for attempt in $(seq 1 120); do
             gh release download "$TAG" --dir dist/release-artifacts \
@@ -159,10 +128,6 @@ jobs:
           EOF
           exit 1
 
-      # SHA256SUMS lives on the same release as the archives, so it only proves
-      # the download arrived intact. The attestation is the claim that cannot be
-      # forged by someone with write access to the release: it is signed by
-      # release.yml's own OIDC identity.
       - name: Verify build provenance
         env:
           GH_TOKEN: ${{ github.token }}
@@ -201,13 +166,13 @@ jobs:
               const m = require(path.resolve(process.argv[1], "package.json"));
               console.log(`${m.name}@${m.version}`);
             ' "$dir")"
-            if npm view "$spec" version >/dev/null 2>&1; then
+            if pnpm view "$spec" version >/dev/null 2>&1; then
               echo "$spec is already published, skipping"
               continue
             fi
             echo "publishing $spec"
             # shellcheck disable=SC2086  # DRY_RUN is a flag or empty, on purpose
-            npm publish "$dir" --provenance --access public $DRY_RUN
+            pnpm publish "$dir" --provenance --access public --no-git-checks $DRY_RUN
           done
 
   root:
@@ -218,24 +183,25 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           ref: ${{ github.event.release.tag_name || inputs.tag }}
           persist-credentials: false
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      # An explicit version, because a re-run may check out a tag older than the
+      # packageManager field; keep it equal to package.json's packageManager.
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: 12.9.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: "22"
-
-      - name: Install the pinned npm
-        run: npm install -g "npm@$NPM_VERSION"
 
       - name: Resolve version
         id: version
         run: echo "version=$(node scripts/build-npm-packages.mjs --print-version)" >> "$GITHUB_OUTPUT"
 
-      # The root package is useless until every optionalDependency it names is
-      # resolvable, so do not publish it before the registry has caught up.
       - name: Wait for the platform packages to be resolvable
         if: ${{ !inputs.dry_run }}
         env:
@@ -243,7 +209,7 @@ jobs:
         run: |
           for name in $(node -p "require('./npm/lib/targets.json').targets.map(t => t.package).join(' ')"); do
             for attempt in $(seq 1 30); do
-              if npm view "$name@$VERSION" version >/dev/null 2>&1; then
+              if pnpm view "$name@$VERSION" version >/dev/null 2>&1; then
                 echo "$name@$VERSION is live"
                 break
               fi
@@ -261,4 +227,4 @@ jobs:
       - name: Publish
         run: |
           # shellcheck disable=SC2086  # DRY_RUN is a flag or empty, on purpose
-          npm publish dist/npm/tokencount --provenance --access public $DRY_RUN
+          pnpm publish dist/npm/tokencount --provenance --access public --no-git-checks $DRY_RUN

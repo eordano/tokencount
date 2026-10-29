@@ -8,9 +8,7 @@ pub fn byte_to_char_table() -> [char; 256] {
     let mut n: u32 = 0;
     for b in 0u16..256 {
         let ch = match b as u8 {
-            // Ranges that map to themselves
             0x21..=0x7E | 0xA1..=0xAC | 0xAE..=0xFF => b as u32,
-            // Everything else maps to 0x100 + n
             _ => {
                 let c = 0x100 + n;
                 n += 1;

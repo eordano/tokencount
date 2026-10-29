@@ -1,0 +1,5 @@
+minimumReleaseAge: 10080
+allowBuilds:
+  esbuild: false
+  onnxruntime-node: false
+  protobufjs: false
